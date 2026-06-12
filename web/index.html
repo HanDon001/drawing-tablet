@@ -263,6 +263,10 @@
             <!-- AI 功能区 -->
             <div class="p-3 border-b border-light-brown/50 space-y-2">
                 <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase mb-2"><i class="fas fa-wand-magic-sparkles mr-1"></i>AI 功能</h3>
+                <!-- Agent 启动/停止 -->
+                <button id="agentToggleBtn" onclick="toggleAgent()" class="w-full py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-500 text-white text-[11px] font-semibold hover:opacity-90 transition-all shadow-md">
+                    <i class="fas fa-robot mr-1"></i>启动 AI 陪伴模式
+                </button>
                 <div class="grid grid-cols-2 gap-1.5">
                     <button onclick="VC.Agent.demonstrate()" class="py-2 px-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] font-medium hover:opacity-90 transition-all">
                         <i class="fas fa-palette mr-1"></i>多模态绘画
@@ -336,6 +340,7 @@
     <script src="js/parser.js"></script>
     <script src="js/cmd.js"></script>
     <script src="js/agent.js"></script>
+    <script src="js/agent_loop.js"></script>
     <script src="js/log.js"></script>
     <script src="js/ui.js"></script>
 
@@ -377,14 +382,38 @@
             if (!text) return;
 
             input.value = '';
-            addChatMessage('user', text);
-            VC.Cmd.processText(text);
+
+            // Agent 模式：发到 Agent
+            if (agentRunning) {
+                VC.AgentLoop.sendText(text);
+            } else {
+                // 普通模式：本地处理
+                addChatMessage('user', text);
+                VC.Cmd.processText(text);
+            }
         }
 
         // 快捷指令（按钮点击）
         function sendQuickCmd(text) {
             addChatMessage('user', text);
             VC.Cmd.processText(text);
+        }
+
+        // Agent 陪伴模式切换
+        let agentRunning = false;
+        function toggleAgent() {
+            const btn = document.getElementById('agentToggleBtn');
+            if (agentRunning) {
+                VC.AgentLoop.stop();
+                btn.innerHTML = '<i class="fas fa-robot mr-1"></i>启动 AI 陪伴模式';
+                btn.className = 'w-full py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-500 text-white text-[11px] font-semibold hover:opacity-90 transition-all shadow-md';
+                agentRunning = false;
+            } else {
+                VC.AgentLoop.start();
+                btn.innerHTML = '<i class="fas fa-stop mr-1"></i>停止 AI 陪伴';
+                btn.className = 'w-full py-2.5 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white text-[11px] font-semibold hover:opacity-90 transition-all shadow-md';
+                agentRunning = true;
+            }
         }
 
         window.addEventListener('DOMContentLoaded', async () => {

@@ -14,6 +14,7 @@ from .core.config import settings
 from .api.v1.agent import router as agent_router
 from .api.v1.voice import router as voice_router
 from .api.v1.voice_ws import router as voice_ws_router
+from .api.v1.agent_ws import router as agent_ws_router
 
 # 导入 Skills 模块，确保工具被注册到 ToolRegistry
 from .skills.draw import tools as draw_tools
@@ -98,6 +99,7 @@ async def log_requests(request: Request, call_next):
 app.include_router(agent_router)
 app.include_router(voice_router)
 app.include_router(voice_ws_router)
+app.include_router(agent_ws_router)
 
 
 @app.get("/")
