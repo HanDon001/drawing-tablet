@@ -7,6 +7,8 @@ TTS: MiMo API
 import httpx
 import base64
 import io
+import asyncio
+from hashlib import md5
 from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -14,6 +16,7 @@ from pydantic import BaseModel, Field
 from loguru import logger
 
 from app.core.config import settings
+from app.core.http_client import http_client
 
 router = APIRouter(prefix="/ai/v1/voice", tags=["voice"])
 
@@ -154,12 +157,11 @@ async def speech_to_text(request: ASRRequest, http_request: Request):
             "stream": False,
         }
 
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.post(
-                f"{settings.MIMO_API_BASE}/v1/chat/completions",
-                json=payload,
-                headers={"api-key": settings.MIMO_API_KEY, "Content-Type": "application/json"},
-            )
+        response = await http_client.post(
+            f"{settings.MIMO_API_BASE}/v1/chat/completions",
+            json=payload,
+            headers={"api-key": settings.MIMO_API_KEY, "Content-Type": "application/json"},
+        )
 
         if response.status_code != 200:
             logger.error(f"[{request_id}] MiMo ASR 错误: {response.status_code} - {response.text}")
@@ -180,39 +182,98 @@ async def speech_to_text(request: ASRRequest, http_request: Request):
         raise HTTPException(status_code=500, detail="语音识别失败")
 
 
+# TTS 音频缓存 {cache_key: bytes}
+_tts_cache: dict[str, bytes] = {}
+_tts_cache_lock = asyncio.Lock()
+
+# 高频回复预热列表
+WARMUP_PHRASES = [
+    "好的，已经在画布上绘制了",
+    "已撤销上一步操作",
+    "画布已清空",
+    "抱歉，我没有理解您的意思",
+    "好的，我安静",
+    "画布上还没有任何图形",
+]
+
+
+def _tts_cache_key(text: str, voice: str) -> str:
+    return md5(f"{text}:{voice}".encode()).hexdigest()
+
+
+async def _fetch_tts_audio(text: str, voice: str, style: str) -> bytes:
+    """调用 MiMo TTS 并收集完整音频（使用全局连接池）"""
+    payload = {
+        "model": "mimo-v2.5-tts",
+        "messages": [
+            {"role": "user", "content": style},
+            {"role": "assistant", "content": text},
+        ],
+        "audio": {"format": "pcm16", "voice": voice},
+        "stream": True,
+    }
+
+    audio_parts = []
+    async with http_client.stream(
+        "POST",
+        f"{settings.MIMO_API_BASE}/v1/chat/completions",
+        json=payload,
+        headers={"api-key": settings.MIMO_API_KEY, "Content-Type": "application/json"},
+    ) as response:
+        if response.status_code != 200:
+            raise Exception(f"TTS API 错误: {response.status_code}")
+        async for chunk in response.aiter_bytes():
+            audio_parts.append(chunk)
+
+    return b"".join(audio_parts)
+
+
 @router.post("/tts")
 async def text_to_speech(request: TTSRequest, http_request: Request):
-    """TTS 语音合成 - MiMo API"""
+    """TTS 语音合成 - MiMo API，带缓存 + 连接池"""
     request_id = http_request.headers.get("X-Request-ID", "unknown")
-    logger.info(f"[{request_id}] TTS 请求: text={request.text}")
+    cache_key = _tts_cache_key(request.text, request.voice)
+
+    # 命中缓存直接返回
+    async with _tts_cache_lock:
+        cached = _tts_cache.get(cache_key)
+    if cached:
+        logger.info(f"[{request_id}] TTS 缓存命中: {request.text[:20]}...")
+        return StreamingResponse(iter([cached]), media_type="audio/pcm")
+
+    logger.info(f"[{request_id}] TTS 请求: {request.text[:30]}...")
 
     try:
-        payload = {
-            "model": "mimo-v2.5-tts",
-            "messages": [
-                {"role": "user", "content": request.style or "Bright, bouncy, slightly sing-song tone"},
-                {"role": "assistant", "content": request.text},
-            ],
-            "audio": {"format": "pcm16", "voice": request.voice},
-            "stream": True,
-        }
+        style = request.style or "Bright, bouncy, slightly sing-song tone"
+        audio_bytes = await _fetch_tts_audio(request.text, request.voice, style)
 
-        async def generate_audio():
-            async with httpx.AsyncClient(timeout=60.0) as client:
-                async with client.stream(
-                    "POST",
-                    f"{settings.MIMO_API_BASE}/v1/chat/completions",
-                    json=payload,
-                    headers={"api-key": settings.MIMO_API_KEY, "Content-Type": "application/json"},
-                ) as response:
-                    if response.status_code != 200:
-                        yield b""
-                        return
-                    async for chunk in response.aiter_bytes():
-                        yield chunk
+        # 写入缓存
+        async with _tts_cache_lock:
+            _tts_cache[cache_key] = audio_bytes
 
-        return StreamingResponse(generate_audio(), media_type="audio/pcm")
+        return StreamingResponse(iter([audio_bytes]), media_type="audio/pcm")
 
     except Exception as e:
         logger.error(f"[{request_id}] TTS 错误: {str(e)}")
         raise HTTPException(status_code=500, detail="语音合成失败")
+
+
+@router.post("/tts/warmup")
+async def tts_warmup():
+    """预热高频回复缓存"""
+    warmed = 0
+    for phrase in WARMUP_PHRASES:
+        cache_key = _tts_cache_key(phrase, "Chloe")
+        async with _tts_cache_lock:
+            if cache_key in _tts_cache:
+                continue
+        try:
+            audio = await _fetch_tts_audio(phrase, "Chloe", "Bright, bouncy, slightly sing-song tone")
+            async with _tts_cache_lock:
+                _tts_cache[cache_key] = audio
+            warmed += 1
+            logger.info(f"TTS 预热: {phrase}")
+        except Exception as e:
+            logger.warning(f"TTS 预热失败: {phrase} - {e}")
+
+    return {"warmed": warmed, "total": len(WARMUP_PHRASES)}

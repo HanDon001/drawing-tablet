@@ -13,6 +13,9 @@
       <span class="status-text">{{ statusText }}</span>
     </div>
 
+    <!-- 日志面板 -->
+    <LogPanel :logs="logEntries" />
+
     <!-- 聊天面板 -->
     <ChatPanel :messages="chatMessages" />
 
@@ -31,9 +34,10 @@ import { useCanvasStore } from '@/stores/canvasStore'
 import { CanvasEngine } from '@/utils/canvasEngine'
 import { useVoice } from '@/composables/useVoice'
 import { interpret } from '@/api'
-import { logger } from '@/utils/logger'
+import { logger, onLog } from '@/utils/logger'
 import MicButton from '@/components/MicButton.vue'
 import ChatPanel, { type ChatMessage } from '@/components/ChatPanel.vue'
+import LogPanel, { type LogEntry } from '@/components/LogPanel.vue'
 
 // Store
 const canvasStore = useCanvasStore()
@@ -48,6 +52,18 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const isLoading = ref(false)
 const statusText = ref('')
 const chatMessages = ref<ChatMessage[]>([])
+const logEntries = ref<LogEntry[]>([])
+
+function addLog(level: LogEntry['level'], message: string) {
+  logEntries.value.push({
+    id: `log_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    level,
+    message,
+    time: Date.now(),
+  })
+  // 保留最近 200 条
+  if (logEntries.value.length > 200) logEntries.value.splice(0, 50)
+}
 
 function addChatMessage(role: 'user' | 'assistant', text: string) {
   chatMessages.value.push({
@@ -138,50 +154,48 @@ async function handleFastCommand(command: string): Promise<boolean> {
 }
 
 /**
- * 构建画布上下文描述（视障查询优化）
- * 生成包含空间方位的自然语言描述
+ * 画布上下文（差量更新，节省 token）
  */
+let lastCanvasHash = ''
+let lastObjectCount = 0
+
 function buildCanvasContext(): string {
   const objects = canvasStore.objects
+
+  // 简单 hash：对象数量 + 最后一个对象的 tag
+  const currentHash = `${objects.length}_${objects.at(-1)?.tag || ''}_${objects.at(-1)?.shape || ''}`
+
+  if (currentHash === lastCanvasHash && lastObjectCount > 0) {
+    return '画布状态未变化，与上次相同'
+  }
+
+  lastCanvasHash = currentHash
+  lastObjectCount = objects.length
 
   if (objects.length === 0) {
     return '画布为空，没有任何图形'
   }
 
-  // 位置映射（用于空间描述）
   const positionNames: Record<string, string> = {
-    'center': '中间',
-    'left_top': '左上角',
-    'right_top': '右上角',
-    'left_bottom': '左下角',
-    'right_bottom': '右下角'
+    'center': '中间', 'left_top': '左上角', 'right_top': '右上角',
+    'left_bottom': '左下角', 'right_bottom': '右下角',
   }
-
-  // 形状名称映射
   const shapeNames: Record<string, string> = {
-    'circle': '圆',
-    'rectangle': '方块',
-    'triangle': '三角形',
-    'line': '线'
+    'circle': '圆', 'rectangle': '方块', 'triangle': '三角形', 'line': '线',
   }
-
-  // 大小名称映射
   const sizeNames: Record<string, string> = {
-    'small': '小',
-    'medium': '',
-    'large': '大'
+    'small': '小', 'medium': '', 'large': '大',
   }
 
   const descriptions = objects.map(obj => {
-    const posName = positionNames[obj.position] || obj.position
-    const shapeName = shapeNames[obj.shape] || obj.shape
-    const sizeName = sizeNames[obj.size] || ''
-    const tagInfo = obj.tag ? `，叫做"${obj.tag}"` : ''
-
-    return `画布${posName}有一个${obj.color}${sizeName}${shapeName}${tagInfo}`
+    const pos = positionNames[obj.position] || obj.position
+    const shape = shapeNames[obj.shape] || obj.shape
+    const size = sizeNames[obj.size] || ''
+    const tag = obj.tag ? `，叫做"${obj.tag}"` : ''
+    return `${pos}${obj.color}${size}${shape}${tag}`
   })
 
-  return descriptions.join('；')
+  return `画布共${objects.length}个图形: ${descriptions.join('；')}`
 }
 
 /**
@@ -329,6 +343,11 @@ watch(
 // 初始化
 onMounted(() => {
   initCanvas()
+
+  // 连接 logger 到日志面板
+  onLog((level, message) => {
+    addLog(level, message)
+  })
 })
 </script>
 
