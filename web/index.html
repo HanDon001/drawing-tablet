@@ -260,15 +260,29 @@
             </div>
         </div>
 
-        <!-- 右侧：日志面板 -->
-        <aside class="w-64 bg-white border-l border-light-brown flex flex-col flex-shrink-0">
-            <div class="p-3 border-b border-light-brown/50 bg-cream/30">
-                <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase">Event Log</h3>
+        <!-- 右侧：AI 对话聊天栏 -->
+        <aside class="w-72 bg-white border-l border-light-brown flex flex-col flex-shrink-0">
+            <div class="p-3 border-b border-light-brown/50 bg-cream/30 flex items-center justify-between">
+                <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase"><i class="fas fa-robot mr-1"></i>小画助手</h3>
+                <button onclick="toggleLogPanel()" class="text-[10px] text-mid-brown/50 hover:text-mid-brown transition-colors" title="日志">
+                    <i class="fas fa-list-ul"></i> 日志
+                </button>
             </div>
-            <div class="flex-1 overflow-y-auto p-3 space-y-2 text-[11px]" id="logContainer">
-                <div class="text-center text-[10px] text-mid-brown/40 my-4">--- Session Started ---</div>
+            <div class="flex-1 overflow-y-auto p-3 space-y-3 text-[11px]" id="chatContainer">
+                <div class="text-center text-[10px] text-mid-brown/40 my-4">说出你想画的内容吧 🎨</div>
             </div>
         </aside>
+
+        <!-- 日志浮层（默认隐藏） -->
+        <div id="logPanel" class="fixed left-60 bottom-4 w-80 max-h-72 bg-white rounded-xl shadow-2xl border border-light-brown z-50 flex-col" style="display: none;">
+            <div class="flex items-center justify-between px-3 py-2 border-b border-light-brown/50 bg-cream/30 rounded-t-xl">
+                <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase"><i class="fas fa-list-ul mr-1"></i>Event Log</h3>
+                <button onclick="toggleLogPanel()" class="text-mid-brown/50 hover:text-mid-brown text-[10px]"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-3 space-y-2 text-[11px] max-h-60" id="logContainer">
+                <div class="text-center text-[10px] text-mid-brown/40 my-4">--- Session Started ---</div>
+            </div>
+        </div>
     </main>
 
     <!-- 模块化脚本 -->
@@ -285,6 +299,35 @@
 
     <!-- 应用初始化 -->
     <script>
+        // 日志面板切换
+        function toggleLogPanel() {
+            const panel = document.getElementById('logPanel');
+            panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+        }
+
+        // 添加聊天消息
+        function addChatMessage(role, text) {
+            const container = document.getElementById('chatContainer');
+            const emptyHint = container.querySelector('.text-center');
+            if (emptyHint) emptyHint.remove();
+
+            const isUser = role === 'user';
+            const entry = document.createElement('div');
+            entry.className = `flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`;
+            entry.innerHTML = `
+                <div class="w-6 h-6 rounded-full ${isUser ? 'bg-deep-brown' : 'bg-warm-orange'} flex items-center justify-center flex-shrink-0">
+                    <i class="fas ${isUser ? 'fa-user' : 'fa-robot'} text-white text-[8px]"></i>
+                </div>
+                <div class="${isUser ? 'bg-deep-brown text-white' : 'bg-light-brown/50 text-body-text'} px-3 py-2 rounded-xl text-[11px] leading-relaxed max-w-[80%]" style="${isUser ? 'border-bottom-right-radius: 4px;' : 'border-bottom-left-radius: 4px;'}">
+                    ${escapeHtml(text)}
+                </div>
+            `;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
         window.addEventListener('DOMContentLoaded', async () => {
             // 初始化 Canvas
             VC.Canvas.init(document.getElementById('mainCanvas'));

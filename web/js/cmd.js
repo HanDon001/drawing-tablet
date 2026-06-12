@@ -145,19 +145,29 @@
          * 处理文本指令
          */
         async processText(text) {
+            // 聊天面板记录用户消息
+            if (typeof addChatMessage === 'function') addChatMessage('user', text);
+
             // 检测快通道
             const fastCmd = VC.Parser.detectFastCommand(text);
             if (fastCmd) {
+                let reply = '';
                 switch (fastCmd) {
-                    case 'undo': return this.undo();
-                    case 'clear': return this.clearAll();
-                    case 'delete': return this.deleteShape();
+                    case 'undo': this.undo(); reply = '已撤销'; break;
+                    case 'clear': this.clearAll(); reply = '已清空画布'; break;
+                    case 'delete': this.deleteShape(); reply = '已删除'; break;
                 }
+                if (reply && typeof addChatMessage === 'function') addChatMessage('assistant', reply);
+                if (VC.Voice && reply) await VC.Voice.speak(reply);
+                return;
             }
 
             // 慢通道解析
             const intent = VC.Parser.parseIntent(text);
             const result = this.executeIntent(intent);
+
+            // 聊天面板记录 AI 回复
+            if (intent.reply && typeof addChatMessage === 'function') addChatMessage('assistant', intent.reply);
 
             // 语音播报
             if (VC.Voice && intent.reply) {

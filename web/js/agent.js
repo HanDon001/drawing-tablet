@@ -130,6 +130,7 @@
         async _execAndSpeak(execFn, description) {
             execFn();
             if (VC.Log) VC.Log.add('agent', `🤖 ${description}`);
+            if (typeof addChatMessage === 'function') addChatMessage('assistant', description);
             await VC.Voice.speak(description);
         },
 
