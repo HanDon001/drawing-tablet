@@ -48,7 +48,7 @@ function handleClick() {
 .mic-button {
   position: fixed;
   bottom: 32px;
-  right: 32px;
+  right: 360px;
   width: 72px;
   height: 72px;
   border-radius: 50%;

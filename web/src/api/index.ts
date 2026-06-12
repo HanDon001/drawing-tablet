@@ -75,4 +75,49 @@ export async function healthCheck(): Promise<{ status: string; service: string }
   return response.data
 }
 
+// ===== 语音服务 API =====
+
+export interface ASRRequest {
+  audio_data: string  // Base64 编码的音频数据
+  mime_type?: string
+  language?: string
+}
+
+export interface ASRResponse {
+  text: string
+}
+
+export interface TTSRequest {
+  text: string
+  voice?: string
+  style?: string
+}
+
+/**
+ * 语音识别 (ASR)
+ */
+export async function speechToText(request: ASRRequest): Promise<ASRResponse> {
+  const response = await apiClient.post<ASRResponse>('/voice/asr', {
+    audio_data: request.audio_data,
+    mime_type: request.mime_type || 'audio/webm',
+    language: request.language || 'auto'
+  })
+  return response.data
+}
+
+/**
+ * 语音合成 (TTS)
+ * 返回音频 Blob
+ */
+export async function textToSpeech(request: TTSRequest): Promise<Blob> {
+  const response = await apiClient.post('/voice/tts', {
+    text: request.text,
+    voice: request.voice || 'Chloe',
+    style: request.style || 'Bright, bouncy, slightly sing-song tone'
+  }, {
+    responseType: 'blob'
+  })
+  return response.data
+}
+
 export default apiClient
