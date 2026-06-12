@@ -8,14 +8,30 @@
  * 最终结果 → 立即 MARK_FINAL → 800ms 冷却 → contextHistory
  */
 
-import { ref, onUnmounted } from 'vue'
-import { textToSpeech } from '@/api'
+import { ref, computed, onUnmounted } from 'vue'
+import { textToSpeech, speechToText } from '@/api'
 import { logger } from '@/utils/logger'
+import { createVoiceFSM, type VoiceState } from './voiceFSM'
 
-export type AsrState = 'idle' | 'listening' | 'processing'
+export type AsrState = VoiceState
 
 export function useVoice() {
-  const asrState = ref<AsrState>('idle')
+  // 状态机
+  const fsm = createVoiceFSM({
+    onEnterListening: () => logger.info('🎤 进入聆听'),
+    onEnterProcessing: () => logger.info('⚙️ 处理中'),
+    onEnterSpeaking: () => logger.info('🔊 播报中'),
+    onEnterIdle: () => logger.info('待机'),
+    onError: (msg) => logger.error('状态机错误:', msg),
+  })
+
+  // 兼容旧接口
+  const asrState = computed(() => {
+    const s = fsm.state.value
+    if (s === 'listening') return 'listening'
+    if (s === 'processing' || s === 'speaking') return 'processing'
+    return 'idle'
+  })
   const transcript = ref('')
 
   // 音频捕获
@@ -134,7 +150,7 @@ export function useVoice() {
             case 'status':
               logger.info('ASR 状态:', msg.status)
               if (msg.status === 'started') {
-                asrState.value = 'listening'
+                fsm.transition('listening')
               }
               break
 
@@ -242,16 +258,16 @@ export function useVoice() {
         }
       }))
 
-      asrState.value = 'listening'
+      fsm.transition('listening')
       logger.info('实时 ASR 已启动')
     } catch (err) {
       logger.error('启动 ASR 失败:', err)
-      asrState.value = 'idle'
+      fsm.transition('idle')
     }
   }
 
   function stopListening(): void {
-    if (asrState.value !== 'listening') return
+    if (!fsm.canTransitionTo('idle')) return
 
     // 1. 发送 stop 指令
     if (ws?.readyState === WebSocket.OPEN) {
@@ -276,7 +292,7 @@ export function useVoice() {
       emitTranscript(lastPartialText, true)
     }
 
-    asrState.value = 'idle'
+    fsm.transition('idle')
     logger.info('实时 ASR 已停止')
   }
 

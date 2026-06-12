@@ -15,14 +15,8 @@ from app.skills.draw.skill import DrawSkill
 from app.skills.query.skill import QuerySkill
 
 
-# 全局系统提示词
-SYSTEM_PROMPT = """你是 VoiceCanvas 的智能语音助手"小画"，专为残障人士服务。
-
-【全局规则】
-1. 你的回复将被 TTS 播报，严禁使用 Markdown 格式，保持简短口语化。
-2. 每次执行动作后，必须用自然语言确认结果。
-3. 当用户说"它"、"刚才那个"时，需结合上下文解析。
-4. 若遇到危险或不当请求，温和拒绝。"""
+# 全局系统提示词（精简版，约 80 tokens）
+SYSTEM_PROMPT = """你是语音助手"小画"。回复口语化、<30字、无 Markdown。执行后自然语言确认。"""
 
 
 class Agent:
@@ -111,14 +105,24 @@ class Agent:
             skill_tool_names = [t.__name__ for t in skill.get_tools()]
             openai_tools = ToolRegistry.get_openai_tools(skill_tool_names)
 
-            # 4. 调用 LLM
+            # 4. 调用 LLM（带延迟追踪）
+            import time as _time
+            from .metrics import LLM_LATENCY, ERROR_COUNT
+
             logger.info(f"调用 LLM，工具列表: {skill_tool_names}")
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=openai_tools if openai_tools else None,
-                tool_choice="auto" if openai_tools else None,
-            )
+            llm_start = _time.time()
+            try:
+                response = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    tools=openai_tools if openai_tools else None,
+                    tool_choice="auto" if openai_tools else None,
+                )
+                LLM_LATENCY.observe(_time.time() - llm_start)
+            except Exception as llm_err:
+                LLM_LATENCY.observe(_time.time() - llm_start)
+                ERROR_COUNT.labels(component='llm').inc()
+                raise llm_err
 
             message = response.choices[0].message
             actions = []
