@@ -13,6 +13,9 @@
       <span class="status-text">{{ statusText }}</span>
     </div>
 
+    <!-- 聊天面板 -->
+    <ChatPanel :messages="chatMessages" />
+
     <!-- 麦克风按钮 -->
     <MicButton
       :is-listening="asrState === 'listening'"
@@ -30,6 +33,7 @@ import { useVoice } from '@/composables/useVoice'
 import { interpret } from '@/api'
 import { logger } from '@/utils/logger'
 import MicButton from '@/components/MicButton.vue'
+import ChatPanel, { type ChatMessage } from '@/components/ChatPanel.vue'
 
 // Store
 const canvasStore = useCanvasStore()
@@ -43,6 +47,16 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 // 状态
 const isLoading = ref(false)
 const statusText = ref('')
+const chatMessages = ref<ChatMessage[]>([])
+
+function addChatMessage(role: 'user' | 'assistant', text: string) {
+  chatMessages.value.push({
+    id: `msg_${Date.now()}_${Math.random().toString(36).substr(2, 6)}`,
+    role,
+    text,
+    time: Date.now(),
+  })
+}
 
 // Canvas 引擎实例
 let engine: CanvasEngine | null = null
@@ -103,15 +117,18 @@ async function handleFastCommand(command: string): Promise<boolean> {
   switch (command) {
     case 'undo':
       canvasStore.undo()
+      addChatMessage('assistant', '已撤销')
       await speak('已撤销')
       return true
 
     case 'clear':
       canvasStore.clear()
+      addChatMessage('assistant', '已清空画布')
       await speak('已清空画布')
       return true
 
     case 'stop':
+      addChatMessage('assistant', '好的，我安静')
       await speak('好的，我安静')
       return true
 
@@ -237,6 +254,7 @@ async function handleSlowCommand(text: string): Promise<void> {
 
     // 语音播报回复
     if (response.reply) {
+      addChatMessage('assistant', response.reply)
       await speak(response.reply)
     }
 
@@ -249,25 +267,32 @@ async function handleSlowCommand(text: string): Promise<void> {
     statusText.value = ''
 
     // 友好的错误提示
-    if (errorMsg.includes('超时')) {
-      await speak('网络开小差了，请稍后再试')
-    } else {
-      await speak('抱歉，处理指令时出错了')
-    }
+    const errMsg = errorMsg.includes('超时') ? '网络开小差了，请稍后再试' : '抱歉，处理指令时出错了'
+    addChatMessage('assistant', errMsg)
+    await speak(errMsg)
   } finally {
     isLoading.value = false
   }
 }
 
-// 监听 ASR 识别结果
+// 监听 ASR 识别结果（格式: text__timestamp__final|temp）
 watch(transcript, async (newText) => {
   if (!newText) return
 
-  // 提取实际文本（去掉时间戳后缀）
-  const actualText = newText.split('__')[0]
+  const parts = newText.split('__')
+  const actualText = parts[0]
+  const isFinal = parts[2] === 'final'
 
+  if (!isFinal) {
+    // 增量结果：仅显示，不执行
+    statusText.value = `🎤 ${actualText}`
+    return
+  }
+
+  // 最终结果：执行指令
   logger.info('收到语音输入:', actualText)
   statusText.value = `识别到: ${actualText}`
+  addChatMessage('user', actualText)
 
   // 检查快通道
   const fastCommand = detectFastCommand(actualText)

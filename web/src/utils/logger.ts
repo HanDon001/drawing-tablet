@@ -44,6 +44,13 @@ export function info(...args: unknown[]): void {
 }
 
 /**
+ * Warn 级别日志
+ */
+export function warn(...args: unknown[]): void {
+  console.warn(`${PREFIX} [WARN ${getTimestamp()}]`, ...args)
+}
+
+/**
  * Error 级别日志
  */
 export function error(...args: unknown[]): void {
@@ -56,6 +63,7 @@ export function error(...args: unknown[]): void {
 export const logger = {
   debug,
   info,
+  warn,
   error
 }
 
