@@ -4,7 +4,8 @@ Agent 核心调度模块
 """
 
 import json
-from typing import Dict, List, Any, Optional
+import re
+from typing import Dict, List, Any, Optional, AsyncGenerator
 from openai import AsyncOpenAI
 from loguru import logger
 
@@ -185,6 +186,129 @@ class Agent:
                 "reply": "抱歉，处理指令时出错了，请稍后重试",
                 "actions": [],
             }
+
+    async def chat_stream(
+        self,
+        text: str,
+        canvas_context: Optional[str] = None
+    ) -> AsyncGenerator[Dict[str, Any], None]:
+        """
+        流式处理用户对话，SSE 逐步返回
+
+        Yields:
+            {"type": "actions", "actions": [...]}  — 工具调用结果
+            {"type": "tts_text", "text": "..."}    — 按句切分的文本，前端可即时 TTS
+            {"type": "done"}                       — 流结束
+        """
+        logger.info(f"Agent.chat_stream 收到: text='{text}'")
+
+        try:
+            skill = self._route_skill(text)
+
+            system_content = SYSTEM_PROMPT + "\n\n" + skill.get_prompt()
+            if canvas_context:
+                system_content += f"\n\n【当前画布状态】\n{canvas_context}"
+
+            messages = [
+                {"role": "system", "content": system_content},
+                {"role": "user", "content": text},
+            ]
+
+            skill_tool_names = [t.__name__ for t in skill.get_tools()]
+            openai_tools = ToolRegistry.get_openai_tools(skill_tool_names)
+
+            # 第一次 LLM 调用（非流式，处理 tool_calls）
+            logger.info(f"调用 LLM，工具列表: {skill_tool_names}")
+            response = await self.client.chat.completions.create(
+                model=self.model,
+                messages=messages,
+                tools=openai_tools if openai_tools else None,
+                tool_choice="auto" if openai_tools else None,
+            )
+
+            message = response.choices[0].message
+            actions = []
+
+            # 处理工具调用
+            if message.tool_calls:
+                messages.append(message.model_dump())
+
+                for tc in message.tool_calls:
+                    tool_name = tc.function.name
+                    try:
+                        tool_args = json.loads(tc.function.arguments)
+                    except json.JSONDecodeError:
+                        tool_args = {}
+
+                    logger.info(f"LLM 调用工具: {tool_name}({tool_args})")
+                    result = ToolRegistry.execute(tool_name, tool_args)
+
+                    actions.append({"tool": tool_name, "params": tool_args})
+
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": tc.id,
+                        "content": result,
+                    })
+
+                # 先返回 actions
+                yield {"type": "actions", "actions": actions}
+
+                # 第二次 LLM 调用（流式）
+                stream = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    stream=True,
+                )
+            else:
+                # 无工具调用，直接流式返回
+                yield {"type": "actions", "actions": []}
+
+                stream = await self.client.chat.completions.create(
+                    model=self.model,
+                    messages=messages,
+                    stream=True,
+                )
+
+            # 流式消费，按句切分
+            buffer = ""
+            async for chunk in stream:
+                delta = chunk.choices[0].delta.content or ""
+                if not delta:
+                    continue
+                buffer += delta
+
+                # 按句切分
+                sentences = _split_sentences(buffer)
+                if len(sentences) > 1:
+                    complete = sentences[:-1]
+                    buffer = sentences[-1]
+                    for s in complete:
+                        s = s.strip()
+                        if s:
+                            yield {"type": "tts_text", "text": s}
+
+            # 剩余文本
+            if buffer.strip():
+                yield {"type": "tts_text", "text": buffer.strip()}
+
+            yield {"type": "done"}
+
+        except Exception as e:
+            logger.error(f"Agent.chat_stream 错误: {str(e)}")
+            yield {"type": "tts_text", "text": "抱歉，处理指令时出错了"}
+            yield {"type": "done"}
+
+
+def _split_sentences(text: str) -> List[str]:
+    """按中文标点和英文标点切分句子，保留标点"""
+    parts = re.split(r'([。！？；\n])', text)
+    sentences = []
+    for i in range(0, len(parts) - 1, 2):
+        sentences.append(parts[i] + parts[i + 1])
+    if len(parts) % 2 == 1 and parts[-1]:
+        sentences.append(parts[-1])
+    return sentences
 
 
 # 全局 Agent 实例

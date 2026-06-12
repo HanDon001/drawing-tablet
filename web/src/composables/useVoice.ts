@@ -33,7 +33,7 @@ export function useVoice() {
   let cooldownTimer: ReturnType<typeof setTimeout> | null = null
   let isCoolingDown = false
 
-  const DEBOUNCE_MS = 2500
+  const DEBOUNCE_MS = 800
   const COOLDOWN_MS = 800
   const MAX_CONTEXT = 2
 
@@ -41,9 +41,9 @@ export function useVoice() {
 
   function shouldChunk(text: string): boolean {
     // 标点触发
-    if (/[，。！？、；：,.!?;:]/.test(text)) return true
-    // 20 词触发
-    if (text.split(/\s+/).length >= 20) return true
+    if (/[。！？；，]/.test(text)) return true
+    // 10 词触发
+    if (text.split(/\s+/).length >= 10) return true
     return false
   }
 

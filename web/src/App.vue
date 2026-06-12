@@ -30,7 +30,7 @@ import { ref, onMounted, watch } from 'vue'
 import { useCanvasStore } from '@/stores/canvasStore'
 import { CanvasEngine } from '@/utils/canvasEngine'
 import { useVoice } from '@/composables/useVoice'
-import { interpret } from '@/api'
+import { interpretStream } from '@/api'
 import { logger } from '@/utils/logger'
 import MicButton from '@/components/MicButton.vue'
 import ChatPanel, { type ChatMessage } from '@/components/ChatPanel.vue'
@@ -185,88 +185,94 @@ function buildCanvasContext(): string {
 }
 
 /**
- * 处理慢通道指令（调用 AI）
+ * TTS 音频播放队列（前一句播完自动播下一句）
+ */
+const ttsQueue: string[] = []
+let ttsPlaying = false
+
+async function enqueueTTS(text: string) {
+  ttsQueue.push(text)
+  if (!ttsPlaying) drainTTSQueue()
+}
+
+async function drainTTSQueue() {
+  ttsPlaying = true
+  while (ttsQueue.length > 0) {
+    const text = ttsQueue.shift()!
+    try {
+      await speak(text)
+    } catch {
+      // 播放失败跳过
+    }
+  }
+  ttsPlaying = false
+}
+
+/**
+ * 处理慢通道指令（流式 SSE）
  */
 async function handleSlowCommand(text: string): Promise<void> {
   const requestId = generateRequestId()
   isLoading.value = true
   statusText.value = '正在理解指令...'
+  ttsQueue.length = 0
 
   logger.info(`[${requestId}] 开始处理指令: ${text}`)
 
   try {
-    // 构建画布上下文描述
     const canvasContext = buildCanvasContext()
 
-    logger.info(`[${requestId}] 画布上下文: ${canvasContext}`)
+    let fullReply = ''
 
-    // 调用 AI 接口（带超时）
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('请求超时')), 10000)
-    })
+    for await (const event of interpretStream({ text, canvas_context: canvasContext })) {
+      if (event.type === 'actions' && event.actions?.length > 0) {
+        // 执行画布动作
+        for (const action of event.actions) {
+          if (!engine) continue
 
-    const response = await Promise.race([
-      interpret({
-        text,
-        canvas_context: canvasContext
-      }),
-      timeoutPromise
-    ])
-
-    logger.info(`[${requestId}] AI 响应:`, response)
-
-    // 执行动作
-    if (response.actions && response.actions.length > 0) {
-      for (const action of response.actions) {
-        if (!engine) continue
-
-        switch (action.tool) {
-          case 'draw_shape': {
-            const objProps = engine.executeDrawAction(action)
-            if (objProps) {
-              canvasStore.addObject(objProps as any)
+          switch (action.tool) {
+            case 'draw_shape': {
+              const objProps = engine.executeDrawAction(action)
+              if (objProps) canvasStore.addObject(objProps as any)
+              break
             }
-            break
-          }
-
-          case 'edit_shape': {
-            const result = engine.executeEditAction(action, canvasStore.objects)
-            if (result) {
-              canvasStore.updateObject(result.id, result.updates)
+            case 'edit_shape': {
+              const result = engine.executeEditAction(action, canvasStore.objects)
+              if (result) canvasStore.updateObject(result.id, result.updates)
+              break
             }
-            break
-          }
-
-          case 'delete_shape': {
-            const id = engine.executeDeleteAction(action, canvasStore.objects)
-            if (id) {
-              canvasStore.removeObject(id)
+            case 'delete_shape': {
+              const id = engine.executeDeleteAction(action, canvasStore.objects)
+              if (id) canvasStore.removeObject(id)
+              break
             }
-            break
           }
-
-          default:
-            logger.warn(`[${requestId}] 未知工具: ${action.tool}`)
         }
+        renderCanvas()
       }
-      renderCanvas()
+
+      if (event.type === 'tts_text' && event.text) {
+        fullReply += event.text
+        // 即时入 TTS 队列
+        enqueueTTS(event.text)
+      }
+
+      if (event.type === 'done') break
     }
 
-    // 语音播报回复
-    if (response.reply) {
-      addChatMessage('assistant', response.reply)
-      await speak(response.reply)
+    // 聊天面板记录完整回复
+    if (fullReply) {
+      addChatMessage('assistant', fullReply)
     }
 
     statusText.value = ''
-    logger.info(`[${requestId}] 指令处理完成`)
+    logger.info(`[${requestId}] 流式指令处理完成`)
 
   } catch (error: any) {
     const errorMsg = error?.message || '未知错误'
     logger.error(`[${requestId}] 处理指令失败: ${errorMsg}`)
     statusText.value = ''
 
-    // 友好的错误提示
     const errMsg = errorMsg.includes('超时') ? '网络开小差了，请稍后再试' : '抱歉，处理指令时出错了'
     addChatMessage('assistant', errMsg)
     await speak(errMsg)

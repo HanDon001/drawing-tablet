@@ -30,6 +30,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"🤖 LLM模型: {settings.LLM_MODEL}")
     logger.info(f"📝 日志级别: {settings.LOG_LEVEL}")
 
+    # TTS 缓存预热（后台执行，不阻塞启动）
+    import asyncio
+    from app.api.v1.voice import tts_warmup, WARMUP_PHRASES
+    logger.info(f"🔥 TTS 预热: {len(WARMUP_PHRASES)} 条高频回复")
+    asyncio.create_task(tts_warmup())
+
     yield
 
     # 关闭时执行
