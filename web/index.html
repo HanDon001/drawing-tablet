@@ -1702,6 +1702,7 @@
   <script src="js/cmd.js"></script>
   <script src="js/agent.js"></script>
   <script src="js/agent_loop.js"></script>
+  <script src="js/gateway.js"></script>
   <script src="js/log.js"></script>
   <script src="js/ui.js"></script>
 
@@ -1781,14 +1782,38 @@
       // 4. 切换到 AI 模式 UI
       switchToAIUI();
 
-      // 5. 启动 Agent
-      if (typeof VC !== 'undefined' && VC.AgentLoop) VC.AgentLoop.start();
+      // 5. 启动全链路网关 (音频→ASR→LLM 单管道)
+      if (typeof VC !== 'undefined' && VC.Gateway) {
+        VC.Gateway.start({
+          onPartial: (text) => {
+            showAITextBubble('🎤 ' + text);
+          },
+          onFinal: (text) => {
+            showAITextBubble(text);
+            addChatMessage('user', text);
+          },
+          onActions: (actions) => {
+            for (const action of actions) {
+              VC.Cmd._executeLLMAction(action);
+            }
+            VC.Canvas.render();
+          },
+          onReply: (text) => {
+            showAITextBubble(text);
+            addChatMessage('assistant', text);
+            VC.Voice.speak(text);
+          },
+          onStatus: (state) => {
+            if (state === 'listening') showAITextBubble('正在聆听...');
+          },
+        });
+      }
       window.agentRunning = true;
 
       // 6. 启动声波可视化
       startViz();
 
-      addChatMessage('system', 'AI 陪伴模式已启动，点击 AI 头像开始语音输入');
+      addChatMessage('system', 'AI 陪伴模式已启动，全链路直连');
     }
 
     async function exitAIMode() {
@@ -1817,8 +1842,8 @@
       // 3. 切换回普通 UI
       switchToNormalUI();
 
-      // 4. 停止 Agent
-      if (typeof VC !== 'undefined' && VC.AgentLoop) VC.AgentLoop.stop();
+      // 4. 停止网关
+      if (typeof VC !== 'undefined' && VC.Gateway) VC.Gateway.stop();
       window.agentRunning = false;
 
       addChatMessage('system', 'AI 陪伴模式已停止');
@@ -2071,11 +2096,11 @@
       const ta = document.getElementById('chatInput'); const text = ta.value.trim(); if (!text) return;
       ta.value = ''; ta.style.height = 'auto'; document.getElementById('sendBtn').disabled = true;
       addChatMessage('user', text);
-      if (window.agentRunning) { VC.AgentLoop.sendText(text); } else { VC.Cmd.processText(text); }
+      if (window.agentRunning) { VC.Gateway.sendText(text); } else { VC.Cmd.processText(text); }
     }
     function useQuick(text) {
       addChatMessage('user', text);
-      if (window.agentRunning) { VC.AgentLoop.sendText(text); } else { VC.Cmd.processText(text); }
+      if (window.agentRunning) { VC.Gateway.sendText(text); } else { VC.Cmd.processText(text); }
     }
     function clearChatHistory() {
       const body = document.getElementById('chatBody');
