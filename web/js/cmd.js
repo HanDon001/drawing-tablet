@@ -1,94 +1,320 @@
 /**
- * VC.Cmd - 命令执行器
- * 提供所有绘图操作的统一接口
+ * VC.Cmd - 命令执行器（完整版）
+ * AI Agent 可调用的全部画布操作
  */
 (function() {
     'use strict';
 
+    // 形状中文名映射
+    const SHAPE_NAMES = {
+        circle: '圆形', rectangle: '矩形', triangle: '三角形',
+        line: '直线', star: '星形', diamond: '菱形',
+        arrow: '箭头', hexagon: '六边形'
+    };
+
+    // 位置中文名映射
+    const POS_NAMES = {
+        center: '中间', left_top: '左上角', top: '上方', right_top: '右上角',
+        left: '左边', right: '右边',
+        left_bottom: '左下角', bottom: '下方', right_bottom: '右下角'
+    };
+
+    // 主题配置库
+    const THEMES = {
+        '星空': [
+            { shape: 'circle', color: '#1E3A5F', size: 'large', position: 'center', tag: '夜空' },
+            { shape: 'star', color: '#FFD700', size: 'small', position: 'left_top', tag: '星星1' },
+            { shape: 'star', color: '#FFD700', size: 'small', position: 'right_top', tag: '星星2' },
+            { shape: 'star', color: '#FFD700', size: 'small', position: 'left', tag: '星星3' },
+            { shape: 'circle', color: '#F5F5DC', size: 'medium', position: 'right', tag: '月亮' }
+        ],
+        '太阳': [
+            { shape: 'circle', color: '#FFD700', size: 'large', position: 'center', tag: '太阳' },
+            { shape: 'triangle', color: '#FFA500', size: 'small', position: 'left_top', tag: '光线1' },
+            { shape: 'triangle', color: '#FFA500', size: 'small', position: 'right_top', tag: '光线2' },
+            { shape: 'triangle', color: '#FFA500', size: 'small', position: 'left_bottom', tag: '光线3' },
+            { shape: 'triangle', color: '#FFA500', size: 'small', position: 'right_bottom', tag: '光线4' }
+        ],
+        '房子': [
+            { shape: 'rectangle', color: '#8B4513', size: 'large', position: 'center', tag: '墙' },
+            { shape: 'triangle', color: '#A0522D', size: 'medium', position: 'top', tag: '屋顶' },
+            { shape: 'rectangle', color: '#87CEEB', size: 'small', position: 'left', tag: '窗户' },
+            { shape: 'rectangle', color: '#654321', size: 'small', position: 'right', tag: '门' }
+        ]
+    };
+
     VC.Cmd = {
         /**
-         * 执行命令
+         * 执行命令 - 完整工具路由
          */
         execute(action) {
-            switch (action.tool) {
-                case 'draw_shape':
-                    return this.drawShape(action.params);
-                case 'edit_shape':
-                    return this.editShape(action.params);
-                case 'delete_shape':
-                    return this.deleteShape(action.params);
+            const { tool, params } = action;
+            switch (tool) {
+                // 绘制
+                case 'draw_shape':      return this.drawShape(params);
+                case 'draw_multiple':   return this.drawMultiple(params);
+                // 编辑
+                case 'edit_shape':      return this.editShape(params);
+                case 'move_shape':      return this.moveShape(params);
+                case 'resize_shape':    return this.resizeShape(params);
+                case 'set_opacity':     return this.setOpacity(params);
+                case 'set_stroke':      return this.setStroke(params);
+                // 删除
+                case 'delete_shape':    return this.deleteShape(params);
+                case 'delete_all':      return this.clearAll();
+                // 查询
+                case 'list_shapes':     return this.listShapes();
+                case 'get_shape_info':  return this.getShapeInfo(params);
+                case 'describe_canvas': return this.queryCanvas();
+                // 操作
+                case 'undo':            return this.undo();
+                case 'redo':            return this.redo();
+                case 'select_shape':    return this.selectShape(params);
+                case 'duplicate_shape': return this.duplicateShape(params);
+                case 'reorder_shape':   return this.reorderShape(params);
+                // 主题
+                case 'create_theme':    return this.createTheme(params);
+                case 'list_themes':     return this.listThemes();
+                // 画笔/填充/AI 绘图
+                case 'pen_draw':          return this.penDraw(params);
+                case 'fill_area':         return this.fillArea(params);
+                case 'ai_generate_image': return this.aiGenerateImage(params);
+                case 'ai_redraw_region':  return this.aiRedrawRegion(params);
+                case 'set_drawing_mode':  return this.setDrawingMode(params);
                 default:
-                    console.warn('[Cmd] 未知工具:', action.tool);
+                    console.warn('[Cmd] 未知工具:', tool);
                     return false;
             }
         },
+
+        // ─── 绘制 ─────────────────────────────────────
 
         /**
          * 绘制图形
          */
         drawShape(params) {
             const obj = VC.State.addObject({
-                shape: params.shape || 'circle',
-                color: params.color || '#1F2937',
+                shape: params.shape_type || params.shape || 'circle',
+                color: params.color || '黑',
                 size: params.size || 'medium',
                 position: params.position || 'center',
-                opacity: params.opacity || 1,
-                strokeColor: params.strokeColor || 'none',
+                opacity: params.opacity !== undefined ? params.opacity : 1,
+                strokeColor: params.stroke_color || params.strokeColor || 'none',
+                strokeWidth: params.stroke_width || params.strokeWidth || 2,
                 tag: params.tag || null
             });
 
             if (VC.Log) {
-                const shapeName = VC.Config.SHAPE_NAMES[obj.shape] || obj.shape;
-                VC.Log.add('cmd', `绘制: ${shapeName}`);
+                const shapeName = SHAPE_NAMES[obj.shape] || obj.shape;
+                VC.Log.add('cmd', `绘制: ${obj.color}${shapeName}`);
             }
 
             return obj;
         },
 
         /**
-         * 编辑图形
+         * 批量绘制
+         */
+        drawMultiple(params) {
+            let shapes = params.shapes;
+            if (typeof shapes === 'string') {
+                try { shapes = JSON.parse(shapes); } catch (e) { return false; }
+            }
+            if (!Array.isArray(shapes)) return false;
+
+            const results = [];
+            for (const item of shapes) {
+                results.push(this.drawShape(item));
+            }
+
+            if (VC.Log) {
+                VC.Log.add('cmd', `批量绘制: ${results.length}个图形`);
+            }
+            return results;
+        },
+
+        // ─── 编辑 ─────────────────────────────────────
+
+        /**
+         * 编辑图形属性
          */
         editShape(params) {
-            const id = params.targetId || VC.State.selectedObjectId;
-            if (!id) {
-                if (VC.Log) VC.Log.add('system', '⚠️ 请先选择对象');
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) {
+                if (VC.Log) VC.Log.add('system', '⚠️ 未找到目标图形');
                 return false;
             }
 
             const updates = {};
+            if (params.new_color !== undefined) updates.color = params.new_color;
             if (params.newColor !== undefined) updates.color = params.newColor;
+            if (params.new_size) updates.size = params.new_size;
             if (params.newSize) updates.size = params.newSize;
+            if (params.new_position) updates.position = params.new_position;
             if (params.newPosition) updates.position = params.newPosition;
+            if (params.new_opacity !== undefined) updates.opacity = params.new_opacity;
             if (params.newOpacity !== undefined) updates.opacity = params.newOpacity;
+            if (params.new_stroke_color !== undefined) updates.strokeColor = params.new_stroke_color;
             if (params.newStrokeColor !== undefined) updates.strokeColor = params.newStrokeColor;
+            if (params.new_stroke_width !== undefined) updates.strokeWidth = params.new_stroke_width;
+            if (params.newStrokeWidth !== undefined) updates.strokeWidth = params.newStrokeWidth;
+            if (params.new_tag) {
+                updates.tag = params.new_tag;
+            }
 
-            const success = VC.State.updateObject(id, updates);
+            const success = VC.State.updateObject(obj.id, updates);
 
             if (success && VC.Log) {
-                VC.Log.add('cmd', '已修改图形');
+                VC.Log.add('cmd', `已修改: ${obj.tag || obj.shape}`);
             }
 
             return success;
         },
 
         /**
-         * 删除图形
+         * 移动图形
          */
-        deleteShape(params) {
-            const id = params?.targetId || VC.State.selectedObjectId;
-            if (!id) {
-                if (VC.Log) VC.Log.add('system', '⚠️ 请先选择对象');
-                return false;
-            }
+        moveShape(params) {
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) return false;
 
-            const success = VC.State.deleteObject(id);
+            const success = VC.State.updateObject(obj.id, { position: params.position });
 
             if (success && VC.Log) {
-                VC.Log.add('cmd', '已删除图形');
+                const posName = POS_NAMES[params.position] || params.position;
+                VC.Log.add('cmd', `移动: ${obj.tag || obj.shape} → ${posName}`);
             }
 
             return success;
         },
+
+        /**
+         * 调整大小
+         */
+        resizeShape(params) {
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) return false;
+
+            const success = VC.State.updateObject(obj.id, { size: params.size });
+
+            if (success && VC.Log) {
+                VC.Log.add('cmd', `调整大小: ${obj.tag || obj.shape} → ${params.size}`);
+            }
+
+            return success;
+        },
+
+        /**
+         * 设置透明度
+         */
+        setOpacity(params) {
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) return false;
+
+            const success = VC.State.updateObject(obj.id, { opacity: params.opacity });
+
+            if (success && VC.Log) {
+                VC.Log.add('cmd', `透明度: ${obj.tag || obj.shape} → ${params.opacity}`);
+            }
+
+            return success;
+        },
+
+        /**
+         * 设置边框
+         */
+        setStroke(params) {
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) return false;
+
+            const updates = {};
+            if (params.stroke_color) updates.strokeColor = params.stroke_color;
+            if (params.stroke_width) updates.strokeWidth = params.stroke_width;
+
+            const success = VC.State.updateObject(obj.id, updates);
+
+            if (success && VC.Log) {
+                VC.Log.add('cmd', `边框: ${obj.tag || obj.shape} → ${params.stroke_color}`);
+            }
+
+            return success;
+        },
+
+        // ─── 删除 ─────────────────────────────────────
+
+        /**
+         * 删除图形
+         */
+        deleteShape(params) {
+            const obj = this._resolveTarget(params?.target_tag || params?.targetId);
+            if (!obj) {
+                if (VC.Log) VC.Log.add('system', '⚠️ 未找到目标图形');
+                return false;
+            }
+
+            const name = obj.tag || obj.shape;
+            const success = VC.State.deleteObject(obj.id);
+
+            if (success && VC.Log) {
+                VC.Log.add('cmd', `已删除: ${name}`);
+            }
+
+            return success;
+        },
+
+        // ─── 查询 ─────────────────────────────────────
+
+        /**
+         * 列出所有图形
+         */
+        listShapes() {
+            const objs = VC.State.objects || [];
+            if (objs.length === 0) {
+                return '画布为空，没有任何图形。';
+            }
+
+            const lines = objs.map((o, i) => {
+                const shape = SHAPE_NAMES[o.shape] || o.shape;
+                const pos = POS_NAMES[o.position] || o.position;
+                const tag = o.tag ? `("${o.tag}")` : '';
+                const opacity = o.opacity < 1 ? `，透明度${o.opacity}` : '';
+                const stroke = o.strokeColor && o.strokeColor !== 'none' ? `，边框${o.strokeColor}` : '';
+                return `${i + 1}. ${pos}的${o.color}${o.size}${shape}${tag}${opacity}${stroke}`;
+            });
+
+            const result = `画布上有${objs.length}个图形：\n${lines.join('\n')}`;
+
+            if (VC.Log) {
+                VC.Log.add('query', result);
+            }
+
+            return result;
+        },
+
+        /**
+         * 获取指定图形信息
+         */
+        getShapeInfo(params) {
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) return `未找到图形'${params.target_tag || params.targetId}'`;
+
+            const shape = SHAPE_NAMES[obj.shape] || obj.shape;
+            const pos = POS_NAMES[obj.position] || obj.position;
+            const tag = obj.tag ? `，标签"${obj.tag}"` : '';
+            const opacity = obj.opacity < 1 ? `，透明度${obj.opacity}` : '';
+            const stroke = obj.strokeColor && obj.strokeColor !== 'none'
+                ? `，边框${obj.strokeColor}${obj.strokeWidth}px` : '';
+
+            const result = `${obj.color}${obj.size}${shape}，位于${pos}${tag}${opacity}${stroke}`;
+
+            if (VC.Log) {
+                VC.Log.add('query', result);
+            }
+
+            return result;
+        },
+
+        // ─── 操作 ─────────────────────────────────────
 
         /**
          * 撤销
@@ -104,17 +330,151 @@
         },
 
         /**
-         * 清空画布
+         * 重做（暂未实现，预留接口）
          */
-        clearAll() {
-            VC.State.clearAll();
+        redo() {
+            if (VC.Log) {
+                VC.Log.add('cmd', '重做功能开发中');
+            }
+            return false;
+        },
+
+        /**
+         * 选中图形
+         */
+        selectShape(params) {
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) return false;
+
+            VC.State.select(obj.id);
 
             if (VC.Log) {
-                VC.Log.add('cmd', '已清空画布');
+                VC.Log.add('cmd', `选中: ${obj.tag || obj.shape}`);
             }
 
             return true;
         },
+
+        /**
+         * 复制图形
+         */
+        duplicateShape(params) {
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) return false;
+
+            // 偏移位置
+            const positionOrder = ['left_top', 'top', 'right_top', 'left', 'center', 'right', 'left_bottom', 'bottom', 'right_bottom'];
+            let newPos = params.new_position;
+            if (!newPos) {
+                const idx = positionOrder.indexOf(obj.position);
+                newPos = positionOrder[Math.min(idx + 1, positionOrder.length - 1)];
+            }
+
+            const newObj = VC.State.addObject({
+                shape: obj.shape,
+                color: obj.color,
+                size: obj.size,
+                position: newPos,
+                opacity: obj.opacity,
+                strokeColor: obj.strokeColor,
+                strokeWidth: obj.strokeWidth,
+                tag: params.new_tag || (obj.tag ? obj.tag + '_副本' : null)
+            });
+
+            if (VC.Log) {
+                VC.Log.add('cmd', `复制: ${obj.tag || obj.shape}`);
+            }
+
+            return newObj;
+        },
+
+        /**
+         * 调整图层顺序
+         */
+        reorderShape(params) {
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) return false;
+
+            const objs = VC.State.objects;
+            const idx = objs.indexOf(obj);
+            if (idx === -1) return false;
+
+            VC.State.saveHistory();
+
+            switch (params.direction) {
+                case 'front':
+                    objs.splice(idx, 1);
+                    objs.push(obj);
+                    break;
+                case 'back':
+                    objs.splice(idx, 1);
+                    objs.unshift(obj);
+                    break;
+                case 'forward':
+                    if (idx < objs.length - 1) {
+                        objs.splice(idx, 1);
+                        objs.splice(idx + 1, 0, obj);
+                    }
+                    break;
+                case 'backward':
+                    if (idx > 0) {
+                        objs.splice(idx, 1);
+                        objs.splice(idx - 1, 0, obj);
+                    }
+                    break;
+            }
+
+            VC.State.emit('objectsChange', { action: 'reorder' });
+
+            if (VC.Log) {
+                VC.Log.add('cmd', `图层调整: ${obj.tag || obj.shape} → ${params.direction}`);
+            }
+
+            return true;
+        },
+
+        // ─── 主题 ─────────────────────────────────────
+
+        /**
+         * 主题创作
+         */
+        createTheme(params) {
+            const themeName = params.theme_name || params.themeName;
+            const theme = THEMES[themeName];
+            if (!theme) {
+                if (VC.Log) VC.Log.add('cmd', `⚠️ 未知主题: ${themeName}`);
+                return false;
+            }
+
+            // 清空画布后创建
+            VC.State.clearAll();
+
+            for (const item of theme) {
+                this.drawShape(item);
+            }
+
+            if (VC.Log) {
+                VC.Log.add('cmd', `🎨 主题创作: ${themeName}`);
+            }
+
+            return true;
+        },
+
+        /**
+         * 列出可用主题
+         */
+        listThemes() {
+            const names = Object.keys(THEMES);
+            const result = `可用主题：${names.join('、')}`;
+
+            if (VC.Log) {
+                VC.Log.add('query', result);
+            }
+
+            return result;
+        },
+
+        // ─── 通用 ─────────────────────────────────────
 
         /**
          * 查询画布
@@ -130,15 +490,169 @@
         },
 
         /**
-         * 执行解析后的意图
+         * 清空画布
+         */
+        clearAll() {
+            VC.State.clearAll();
+
+            if (VC.Log) {
+                VC.Log.add('cmd', '已清空画布');
+            }
+
+            return true;
+        },
+
+        // ─── 画笔/填充/AI 绘图 ───────────────────────────
+
+        /**
+         * 画笔绘制（由 AI 下发的笔画数据）
+         */
+        penDraw(params) {
+            if (typeof VC.Drawing === 'undefined') return false;
+
+            // AI 下发笔画数据时，逐帧绘制
+            const brush = VC.State.brush;
+            if (params.color) brush.color = params.color;
+            if (params.size) brush.size = params.size;
+
+            // 如果有笔画数据，解析并模拟绘制
+            if (params.strokes) {
+                try {
+                    const strokes = typeof params.strokes === 'string' ? JSON.parse(params.strokes) : params.strokes;
+                    VC.State.currentTool = 'pen';
+                    for (const stroke of strokes) {
+                        if (stroke.points && stroke.points.length > 1) {
+                            for (let i = 1; i < stroke.points.length; i++) {
+                                VC.Drawing._drawLine(
+                                    stroke.points[i - 1].x, stroke.points[i - 1].y,
+                                    stroke.points[i].x, stroke.points[i].y
+                                );
+                            }
+                        }
+                    }
+                    VC.State.currentTool = 'select';
+                } catch (e) {
+                    console.warn('[Cmd] 笔画数据解析失败:', e);
+                }
+            }
+
+            if (VC.Log) {
+                VC.Log.add('cmd', '画笔绘制完成');
+            }
+            return true;
+        },
+
+        /**
+         * 填充颜色
+         */
+        fillArea(params) {
+            if (typeof VC.Drawing === 'undefined') return false;
+
+            const color = params.color || '红';
+            const colorHex = VC.Config.COLOR_MAP[color] || color;
+
+            if (params.x !== undefined && params.y !== undefined) {
+                // 指定位置填充
+                VC.State.brush.color = colorHex;
+                VC.State.currentTool = 'fill';
+                VC.Drawing._floodFill(params.x, params.y);
+                VC.State.currentTool = 'select';
+            }
+
+            if (VC.Log) {
+                VC.Log.add('cmd', `填充: ${color}`);
+            }
+            return true;
+        },
+
+        /**
+         * AI 生成图片
+         */
+        async aiGenerateImage(params) {
+            if (typeof VC.AIDraw === 'undefined') return false;
+
+            const prompt = params.prompt || params.description || '';
+            const style = params.style || 'realistic';
+
+            VC.AIDraw.activate();
+            return await VC.AIDraw.generate(prompt, style);
+        },
+
+        /**
+         * AI 重新绘制区域
+         */
+        async aiRedrawRegion(params) {
+            if (typeof VC.AIDraw === 'undefined') return false;
+
+            const prompt = params.prompt || '';
+            return await VC.AIDraw.generate(prompt);
+        },
+
+        /**
+         * 设置绘画模式
+         */
+        setDrawingMode(params) {
+            if (typeof VC.AIDraw === 'undefined') return false;
+
+            if (params.enabled) {
+                VC.AIDraw.activate();
+            } else {
+                VC.AIDraw.deactivate();
+            }
+
+            if (VC.Log) {
+                VC.Log.add('cmd', params.enabled ? 'AI 绘图模式已开启' : 'AI 绘图模式已关闭');
+            }
+            return true;
+        },
+
+        // ─── 内部方法 ─────────────────────────────────
+
+        /**
+         * 解析目标图形（支持 tag、id、指代词）
+         */
+        _resolveTarget(ref) {
+            if (!ref) {
+                // 默认选中当前选中的对象
+                return VC.State.getSelected();
+            }
+
+            const objs = VC.State.objects || [];
+
+            // 按 tag 查找
+            let obj = objs.find(o => o.tag === ref);
+            if (obj) return obj;
+
+            // 按 id 查找
+            obj = objs.find(o => o.id === ref);
+            if (obj) return obj;
+
+            // 指代词处理
+            if (['它', '这个', '那个', '刚才', '最后'].some(w => ref.includes(w))) {
+                return VC.State.getSelected();
+            }
+
+            // 按形状名查找（如"圆"、"方块"）
+            const shapeMap = {
+                '圆': 'circle', '方块': 'rectangle', '矩形': 'rectangle',
+                '三角': 'triangle', '直线': 'line', '星': 'star',
+                '菱': 'diamond', '箭头': 'arrow', '六边': 'hexagon'
+            };
+            for (const [cn, en] of Object.entries(shapeMap)) {
+                if (ref.includes(cn)) {
+                    const found = objs.find(o => o.shape === en);
+                    if (found) return found;
+                }
+            }
+
+            return null;
+        },
+
+        /**
+         * 执行解析后的意图（向后兼容）
          */
         executeIntent(intent) {
-            if (intent.tool === 'draw_shape') {
-                return this.drawShape(intent.params);
-            } else if (intent.tool === 'edit_shape') {
-                return this.editShape(intent.params);
-            }
-            return false;
+            return this.execute(intent);
         },
 
         /**
@@ -182,7 +696,7 @@
                 // 执行动作
                 if (data.actions && data.actions.length > 0) {
                     for (const action of data.actions) {
-                        this._executeLLMAction(action);
+                        this.execute(action);
                     }
                     VC.Canvas.render();
                 }
@@ -208,46 +722,15 @@
             const objs = VC.State.objects || [];
             if (objs.length === 0) return '画布为空';
 
-            const posNames = { center: '中间', left_top: '左上角', right_top: '右上角', left_bottom: '左下角', right_bottom: '右下角' };
-            const shapeNames = { circle: '圆', rectangle: '方块', triangle: '三角形', line: '线', star: '星', diamond: '菱形', arrow: '箭头', hexagon: '六边形' };
-
             return objs.map(o => {
-                const pos = posNames[o.position] || o.position;
-                const shape = shapeNames[o.shape] || o.shape;
+                const pos = POS_NAMES[o.position] || o.position;
+                const shape = SHAPE_NAMES[o.shape] || o.shape;
                 const tag = o.tag ? `，叫"${o.tag}"` : '';
-                return `${pos}有${o.color}${shape}${tag}`;
+                const opacity = o.opacity < 1 ? `，透明度${o.opacity}` : '';
+                return `${pos}有${o.color}${shape}${tag}${opacity}`;
             }).join('；');
-        },
-
-        /**
-         * 执行 LLM 返回的动作
-         */
-        _executeLLMAction(action) {
-            const { tool, params } = action;
-            if (tool === 'draw_shape') {
-                const pos = VC.Canvas.parsePosition(params.position || 'center');
-                const size = VC.Canvas.parseSize(params.size || 'medium');
-                this.drawShape({
-                    shape: params.shape_type || 'circle',
-                    color: params.color || 'black',
-                    x: pos.x, y: pos.y,
-                    width: size.w, height: size.h,
-                    tag: params.tag
-                });
-            } else if (tool === 'edit_shape') {
-                const obj = (VC.State.objects || []).find(o => o.tag === params.target_tag || o.id === params.target_tag);
-                if (obj) {
-                    if (params.new_color) obj.color = params.new_color;
-                    if (params.new_size) { const s = VC.Canvas.parseSize(params.new_size); obj.width = s.w; obj.height = s.h; }
-                    if (params.new_position) { const p = VC.Canvas.parsePosition(params.new_position); obj.x = p.x; obj.y = p.y; }
-                    VC.State.emit('objectsChange');
-                }
-            } else if (tool === 'delete_shape') {
-                const idx = (VC.State.objects || []).findIndex(o => o.tag === params.target_tag || o.id === params.target_tag);
-                if (idx !== -1) { VC.State.objects.splice(idx, 1); VC.State.emit('objectsChange'); }
-            }
         }
     };
 
-    console.log('[Cmd] 命令执行器加载完成');
+    console.log('[Cmd] 命令执行器加载完成（完整版，共 22 个工具）');
 })();

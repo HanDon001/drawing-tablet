@@ -81,6 +81,37 @@
       background-size: 40px 40px;
     }
 
+    /* 画笔滑块样式 */
+    input[type="range"]::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #E69F56;
+      cursor: pointer;
+      border: 2px solid white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    input[type="range"]::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #E69F56;
+      cursor: pointer;
+      border: 2px solid white;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.2);
+    }
+
+    /* 生成中动画 */
+    #generatingOverlay {
+      backdrop-filter: blur(4px);
+    }
+
+    #generatingOverlay .border-3 {
+      border-width: 3px;
+    }
+
     /* 侧边栏 */
     .sidebar-section {
       border-bottom: 1px solid #E8D9C7;
@@ -1438,6 +1469,27 @@
   <main class="flex-1 flex overflow-hidden">
     <!-- 左侧工具栏 -->
     <aside class="w-60 bg-white border-r border-light-brown flex flex-col flex-shrink-0 text-xs overflow-y-auto">
+      <!-- 画笔工具区 -->
+      <div class="sidebar-section">
+        <div class="section-header" onclick="togglePanel('drawToolsPanel')"><span class="section-title"><i class="fas fa-pen-nib mr-1 text-warm-orange"></i>Draw Tools</span><i
+            class="fas fa-chevron-right section-arrow open" id="drawToolsPanelArrow"></i></div>
+        <div class="section-content" id="drawToolsPanel">
+          <div class="grid grid-cols-3 gap-1.5 mb-2">
+            <button onclick="setDrawTool('pen')" class="tool-btn" id="penBtn" data-tool="pen"><i class="fas fa-pen text-sm mb-0.5"></i><span class="text-[9px]">画笔</span></button>
+            <button onclick="setDrawTool('eraser')" class="tool-btn" id="eraserBtn" data-tool="eraser"><i class="fas fa-eraser text-sm mb-0.5"></i><span class="text-[9px]">橡皮擦</span></button>
+            <button onclick="setDrawTool('fill')" class="tool-btn" id="fillBtn" data-tool="fill"><i class="fas fa-fill-drip text-sm mb-0.5"></i><span class="text-[9px]">填充</span></button>
+          </div>
+          <div class="mb-2">
+            <label class="text-[10px] text-mid-brown/70 block mb-1">Brush Size: <span id="brushSizeLabel">3</span>px</label>
+            <input type="range" id="brushSizeSlider" min="1" max="50" value="3" class="w-full h-1.5 bg-light-brown rounded-full appearance-none cursor-pointer" oninput="setBrushSize(this.value)">
+          </div>
+          <div>
+            <div class="color-row" style="margin-bottom:0;"><span class="color-label">Brush</span>
+              <div class="color-swatches" id="brushSwatches"></div>
+            </div>
+          </div>
+        </div>
+      </div>
       <div class="sidebar-section">
         <div class="section-header" onclick="togglePanel('shapesPanel')"><span class="section-title">Shapes</span><i
             class="fas fa-chevron-right section-arrow open" id="shapesPanelArrow"></i></div>
@@ -1530,12 +1582,37 @@
     <div class="flex-1 p-4 flex flex-col bg-cream/50 relative">
       <div
         class="flex-1 bg-white rounded-xl shadow-inner border border-light-brown relative overflow-hidden canvas-grid">
-        <canvas id="mainCanvas" class="w-full h-full block"></canvas>
+        <canvas id="mainCanvas" class="absolute inset-0 w-full h-full"></canvas>
+        <canvas id="drawCanvas" class="absolute inset-0 w-full h-full z-10"></canvas>
         <div id="emptyHint"
           class="absolute inset-0 flex flex-col items-center justify-center text-mid-brown/30 pointer-events-none"><i
             class="fas fa-microphone-lines text-5xl mb-3"></i>
           <p class="text-sm font-medium">点击麦克风，或使用左侧工具</p>
         </div>
+      </div>
+
+      <!-- AI 绘图 Prompt 输入条 -->
+      <div id="aiPromptBar" class="hidden flex items-center gap-2 mt-3 px-3 py-2 bg-white rounded-xl border border-light-brown shadow-sm">
+        <div class="flex items-center gap-1.5 text-warm-orange text-[10px] font-bold"><i class="fas fa-wand-magic-sparkles"></i><span>AI 绘图</span></div>
+        <input id="aiPromptInput" type="text" placeholder="描述你想画的内容..." class="flex-1 text-xs bg-cream/50 border border-light-brown rounded-lg px-3 py-1.5 outline-none focus:border-warm-orange focus:ring-1 focus:ring-warm-orange/20" />
+        <select id="aiStyleSelect" class="text-[10px] bg-cream/50 border border-light-brown rounded-lg px-2 py-1.5 outline-none">
+          <option value="realistic">写实</option>
+          <option value="cartoon">卡通</option>
+          <option value="anime">动漫</option>
+          <option value="watercolor">水彩</option>
+          <option value="oil">油画</option>
+          <option value="sketch">素描</option>
+          <option value="pixel">像素</option>
+          <option value="chinese">水墨</option>
+        </select>
+        <button id="aiGenerateBtn" onclick="handleAIGenerate()" class="px-3 py-1.5 bg-warm-orange text-white rounded-lg text-[10px] font-bold hover:bg-warm-orange/80 transition-all"><i class="fas fa-wand-magic-sparkles"></i></button>
+      </div>
+
+      <!-- 生成中遮罩 -->
+      <div id="generatingOverlay" class="hidden absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-30 rounded-xl">
+        <div class="w-10 h-10 border-3 border-warm-orange border-t-transparent rounded-full animate-spin mb-3"></div>
+        <p class="text-sm text-mid-brown font-medium">AI 正在创作中...</p>
+        <p class="text-[10px] text-mid-brown/60 mt-1">请稍候</p>
       </div>
 
       <!-- 底部控制区 -->
@@ -1651,6 +1728,12 @@
           <div class="menu-card-title">AI 陪伴</div>
           <div class="menu-card-desc">持续对话，实时感知画布</div>
         </div>
+        <div class="menu-card" onclick="launchModule('ai-draw')" id="aiDrawToggle">
+          <div class="menu-card-icon" style="background:linear-gradient(135deg,#FFEDD5,#FED7AA);color:#EA580C;"><i
+              class="fas fa-wand-magic-sparkles"></i></div>
+          <div class="menu-card-title">AI 绘图</div>
+          <div class="menu-card-desc">描述内容，AI 生成图片</div>
+        </div>
         <div class="menu-card" onclick="launchModule('demo')">
           <div class="menu-card-icon" style="background:linear-gradient(135deg,#FCE7F3,#FBCFE8);color:#DB2777;"><i
               class="fas fa-palette"></i></div>
@@ -1700,6 +1783,8 @@
   <script src="js/voice.js"></script>
   <script src="js/parser.js"></script>
   <script src="js/cmd.js"></script>
+  <script src="js/drawing.js"></script>
+  <script src="js/ai_draw.js"></script>
   <script src="js/agent.js"></script>
   <script src="js/agent_loop.js"></script>
   <script src="js/gateway.js"></script>
@@ -1727,6 +1812,9 @@
           case 'describe': addChatMessage('user', '描述一下画布上的内容'); VC.Cmd.processText('描述一下画布上的内容'); break;
           case 'optimize': addChatMessage('user', '帮我优化一下画布布局'); VC.Cmd.processText('帮我优化一下画布布局'); break;
           case 'agent': toggleAgent(); break;
+          case 'ai-draw':
+            if (VC.AIDraw) VC.AIDraw.toggle();
+            break;
           case 'demo': VC.Agent.demonstrate(); break;
         }
       }, 400);
@@ -1794,7 +1882,7 @@
           },
           onActions: (actions) => {
             for (const action of actions) {
-              VC.Cmd._executeLLMAction(action);
+              VC.Cmd.execute(action);
             }
             VC.Canvas.render();
           },
@@ -2118,13 +2206,76 @@
     }
 
     // ==================== 初始化 ====================
+    // ==================== 画笔工具函数 ====================
+    function setDrawTool(tool) {
+      const tools = ['pen', 'eraser', 'fill'];
+      tools.forEach(t => {
+        const btn = document.getElementById(t + 'Btn');
+        if (btn) btn.classList.toggle('active', t === tool);
+      });
+
+      if (VC.State.currentTool === tool) {
+        // 再次点击取消选择
+        VC.State.currentTool = 'select';
+        if (VC.Drawing) VC.Drawing.setCursor('select');
+      } else {
+        VC.State.currentTool = tool;
+        if (VC.Drawing) VC.Drawing.setCursor(tool);
+      }
+
+      // 切换画笔工具时，隐藏形状选中状态
+      document.querySelectorAll('.tool-btn[data-shape]').forEach(b => b.classList.remove('active'));
+    }
+
+    function setBrushSize(val) {
+      VC.State.brush.size = parseInt(val);
+      const label = document.getElementById('brushSizeLabel');
+      if (label) label.textContent = val;
+    }
+
+    function handleAIGenerate() {
+      const input = document.getElementById('aiPromptInput');
+      const styleSelect = document.getElementById('aiStyleSelect');
+      if (!input || !input.value.trim()) return;
+
+      const prompt = input.value.trim();
+      const style = styleSelect ? styleSelect.value : 'realistic';
+
+      if (VC.AIDraw) {
+        VC.AIDraw.generate(prompt, style);
+      }
+    }
+
+    // 初始化画笔颜色色板
+    function initBrushSwatches() {
+      const container = document.getElementById('brushSwatches');
+      if (!container || typeof VC === 'undefined' || !VC.Config) return;
+
+      const colorMap = VC.Config.COLOR_MAP;
+      for (const [name, hex] of Object.entries(colorMap)) {
+        const swatch = document.createElement('div');
+        swatch.className = 'color-swatch';
+        swatch.style.backgroundColor = hex;
+        swatch.title = name;
+        swatch.onclick = () => {
+          VC.State.brush.color = hex;
+          container.querySelectorAll('.color-swatch').forEach(s => s.classList.remove('active'));
+          swatch.classList.add('active');
+        };
+        if (hex === VC.State.brush.color) swatch.classList.add('active');
+        container.appendChild(swatch);
+      }
+    }
+
     window.addEventListener('DOMContentLoaded', async () => {
       if (typeof VC !== 'undefined') {
         if (VC.Canvas) VC.Canvas.init(document.getElementById('mainCanvas'));
+        if (VC.Drawing) VC.Drawing.init(document.getElementById('drawCanvas'));
         if (VC.Store) VC.Store.init();
         if (VC.Log) VC.Log.init('logContainer');
         if (VC.UI) VC.UI.init();
         if (VC.Voice) await VC.Voice.init();
+        initBrushSwatches();
       }
       // 监听语音事件 → 同步到 AI 模式 UI
       if (typeof VC !== 'undefined' && VC.State) {

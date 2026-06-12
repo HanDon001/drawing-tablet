@@ -60,7 +60,13 @@
             let resizeTimer;
             window.addEventListener('resize', () => {
                 clearTimeout(resizeTimer);
-                resizeTimer = setTimeout(() => this.resize(), 100);
+                resizeTimer = setTimeout(() => {
+                    this.resize();
+                    // 同步调整绘画层尺寸
+                    if (typeof VC.Drawing !== 'undefined') {
+                        VC.Drawing.resize();
+                    }
+                }, 100);
             });
         },
 

@@ -16,6 +16,7 @@ from .api.v1.voice import router as voice_router
 from .api.v1.voice_ws import router as voice_ws_router
 from .api.v1.agent_ws import router as agent_ws_router
 from .api.v1.gateway_ws import router as gateway_router
+from .api.v1.image import router as image_router
 
 # 导入 Skills 模块，确保工具被注册到 ToolRegistry
 from .skills.draw import tools as draw_tools
@@ -102,6 +103,7 @@ app.include_router(voice_router)
 app.include_router(voice_ws_router)
 app.include_router(agent_ws_router)
 app.include_router(gateway_router)
+app.include_router(image_router)
 
 
 @app.get("/")

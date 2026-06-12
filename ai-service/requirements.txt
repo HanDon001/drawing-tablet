@@ -7,6 +7,7 @@ uvicorn[standard]>=0.27.0
 # LLM相关 (DashScope OpenAI兼容API)
 openai>=1.6.0
 websockets>=12.0
+httpx>=0.27.0
 
 # 配置与日志
 pydantic-settings>=2.1.0

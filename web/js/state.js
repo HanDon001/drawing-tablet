@@ -16,6 +16,15 @@
         backendAvailable: false,
         reqCounter: 0,
 
+        // 绘画工具状态
+        currentTool: 'select',  // select | pen | eraser | fill | ai_draw
+        brush: {
+            color: '#1F2937',
+            size: 3,
+            opacity: 1
+        },
+        drawingMode: false,  // AI 绘图模式开关
+
         // 状态变更事件
         _listeners: [],
 

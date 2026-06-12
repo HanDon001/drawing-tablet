@@ -5,30 +5,6 @@
 (function() {
     'use strict';
 
-    // 主题配置库
-    const THEMES = {
-        '星空': [
-            { shape: 'circle', color: '#1E3A5F', size: 'large', position: 'center', tag: '夜空' },
-            { shape: 'star', color: '#FFD700', size: 'small', position: 'left_top', tag: '星星1' },
-            { shape: 'star', color: '#FFD700', size: 'small', position: 'right_top', tag: '星星2' },
-            { shape: 'star', color: '#FFD700', size: 'small', position: 'left', tag: '星星3' },
-            { shape: 'circle', color: '#F5F5DC', size: 'medium', position: 'right', tag: '月亮' }
-        ],
-        '太阳': [
-            { shape: 'circle', color: '#FFD700', size: 'large', position: 'center', tag: '太阳' },
-            { shape: 'triangle', color: '#FFA500', size: 'small', position: 'left_top', tag: '光线1' },
-            { shape: 'triangle', color: '#FFA500', size: 'small', position: 'right_top', tag: '光线2' },
-            { shape: 'triangle', color: '#FFA500', size: 'small', position: 'left_bottom', tag: '光线3' },
-            { shape: 'triangle', color: '#FFA500', size: 'small', position: 'right_bottom', tag: '光线4' }
-        ],
-        '房子': [
-            { shape: 'rectangle', color: '#8B4513', size: 'large', position: 'center', tag: '墙' },
-            { shape: 'triangle', color: '#A0522D', size: 'medium', position: 'top', tag: '屋顶' },
-            { shape: 'rectangle', color: '#87CEEB', size: 'small', position: 'left', tag: '窗户' },
-            { shape: 'rectangle', color: '#654321', size: 'small', position: 'right', tag: '门' }
-        ]
-    };
-
     VC.Agent = {
         /**
          * AI 演示所有功能
@@ -41,51 +17,66 @@
 
             // 1. 绘制圆形
             await this._execAndSpeak(
-                () => VC.Cmd.drawShape({ shape: 'circle', color: '#EF4444', position: 'center', size: 'medium' }),
+                () => VC.Cmd.drawShape({ shape_type: 'circle', color: '#EF4444', position: 'center', size: 'medium' }),
                 '画一个红色的圆在中间'
             );
             await this._delay(600);
 
-            // 2. 绘制矩形
+            // 2. 绘制星形
             await this._execAndSpeak(
-                () => VC.Cmd.drawShape({ shape: 'rectangle', color: '#3B82F6', position: 'left_top', size: 'small' }),
-                '在左上角画一个蓝色的方块'
+                () => VC.Cmd.drawShape({ shape_type: 'star', color: '#FFD700', position: 'left_top', size: 'small' }),
+                '在左上角画一个金色的星'
             );
             await this._delay(600);
 
-            // 3. 编辑颜色
-            const redCircle = VC.State.objects.find(o => o.tag === null && o.shape === 'circle');
-            if (redCircle) {
-                VC.State.select(redCircle.id);
+            // 3. 绘制箭头
+            await this._execAndSpeak(
+                () => VC.Cmd.drawShape({ shape_type: 'arrow', color: '#3B82F6', position: 'right', size: 'medium' }),
+                '右边画一个蓝色箭头'
+            );
+            await this._delay(600);
+
+            // 4. 编辑颜色
+            const objs = VC.State.objects || [];
+            const circle = objs.find(o => o.shape === 'circle');
+            if (circle) {
+                VC.State.select(circle.id);
                 await this._execAndSpeak(
-                    () => VC.Cmd.editShape({ targetId: redCircle.id, newColor: '#10B981' }),
+                    () => VC.Cmd.editShape({ target_tag: circle.tag || circle.id, new_color: '#10B981' }),
                     '把圆改成绿色'
                 );
                 await this._delay(600);
             }
 
-            // 4. 移动位置
-            if (redCircle) {
+            // 5. 设置透明度
+            if (circle) {
                 await this._execAndSpeak(
-                    () => VC.Cmd.editShape({ targetId: redCircle.id, newPosition: 'right_bottom' }),
-                    '把圆移到右下角'
+                    () => VC.Cmd.setOpacity({ target_tag: circle.tag || circle.id, opacity: 0.7 }),
+                    '把圆变成半透明'
                 );
                 await this._delay(600);
             }
 
-            // 5. 查询画布
-            const context = VC.Cmd.queryCanvas();
+            // 6. 查询画布
+            const context = VC.Cmd.listShapes();
             await VC.Voice.speak(context);
             await this._delay(600);
 
-            // 6. 撤销
+            // 7. 撤销
             await this._execAndSpeak(
                 () => VC.Cmd.undo(),
                 '撤销刚才的操作'
             );
             await this._delay(600);
 
-            // 7. 清空
+            // 8. 主题创作
+            await this._execAndSpeak(
+                () => VC.Cmd.createTheme({ theme_name: '太阳' }),
+                '用主题创作一个太阳'
+            );
+            await this._delay(1000);
+
+            // 9. 清空
             await this._execAndSpeak(
                 () => VC.Cmd.clearAll(),
                 '清空画布'
@@ -95,33 +86,28 @@
         },
 
         /**
-         * AI 主题创作
+         * AI 主题创作（委托给 VC.Cmd）
          */
         async createOnTheme(themeName) {
-            const theme = THEMES[themeName];
-            if (!theme) {
-                if (VC.Log) VC.Log.add('agent', `⚠️ 未知主题: ${themeName}`);
-                return false;
-            }
-
             if (VC.Log) VC.Log.add('agent', `🎨 AI 主题创作: ${themeName}`);
             await VC.Voice.speak(`让我来画一幅${themeName}主题的画`);
             await this._delay(500);
 
-            for (const item of theme) {
-                VC.Cmd.drawShape(item);
-                await this._delay(400);
-            }
+            const result = VC.Cmd.createTheme({ theme_name: themeName });
 
-            await VC.Voice.speak(`${themeName}主题创作完成`);
-            return true;
+            if (result) {
+                await VC.Voice.speak(`${themeName}主题创作完成`);
+            } else {
+                await VC.Voice.speak(`抱歉，没有${themeName}这个主题`);
+            }
+            return result;
         },
 
         /**
-         * 获取可用主题列表
+         * 获取可用主题列表（委托给 VC.Cmd）
          */
         getThemes() {
-            return Object.keys(THEMES);
+            return ['星空', '太阳', '房子'];
         },
 
         /**

@@ -14,8 +14,11 @@ from .skill_base import BaseSkill
 from app.skills.draw.skill import DrawSkill
 from app.skills.query.skill import QuerySkill
 
+# 确保所有工具在 import 时通过 @ToolRegistry.register 注册
+import app.skills.draw.tools  # noqa: F401
 
-# 全局系统提示词（精简，减少 token）
+
+# 全局系统提示词
 SYSTEM_PROMPT = """语音助手"小画"。回复口语化、<20字、无Markdown。"""
 
 
@@ -42,7 +45,10 @@ class Agent:
         )
         self.model = settings.LLM_MODEL
 
-        logger.info(f"Agent 初始化完成，模型: {self.model}")
+        # 注册所有工具到 LLM（不再按 Skill 分组，全部可用）
+        self.all_tools = ToolRegistry.get_openai_tools()
+        logger.info(f"Agent 初始化完成，模型: {self.model}，已注册 {len(self.all_tools)} 个工具")
+        logger.info(f"工具列表: {ToolRegistry.list_tools()}")
 
     def _route_skill(self, text: str) -> BaseSkill:
         """
@@ -54,7 +60,7 @@ class Agent:
         Returns:
             匹配的 Skill 实例
         """
-        query_keywords = ["有什么", "画布上", "什么样子", "描述", "看看", "内容", "上面有"]
+        query_keywords = ["有什么", "画布上", "什么样子", "描述", "看看", "内容", "上面有", "几个", "多少"]
 
         for keyword in query_keywords:
             if keyword in text:
@@ -63,6 +69,24 @@ class Agent:
 
         logger.info("路由到 DrawSkill")
         return self.draw_skill
+
+    def _build_system_prompt(self, skill: BaseSkill, canvas_context: Optional[str] = None) -> str:
+        """
+        构建完整的 System Prompt
+
+        Args:
+            skill: 当前路由到的技能
+            canvas_context: 画布上下文描述
+
+        Returns:
+            完整的系统提示词
+        """
+        parts = [SYSTEM_PROMPT, skill.get_prompt()]
+
+        if canvas_context:
+            parts.append(f"\n【当前画布状态】\n{canvas_context}")
+
+        return "\n\n".join(parts)
 
     async def chat(
         self,
@@ -88,26 +112,23 @@ class Agent:
         logger.info(f"Agent.chat 收到: text='{text}', canvas_context='{canvas_context}'")
 
         try:
-            # 1. 路由到合适的 Skill
+            # 1. 路由到合适的 Skill（用于 prompt 选择）
             skill = self._route_skill(text)
 
             # 2. 构建消息
-            system_content = SYSTEM_PROMPT + "\n\n" + skill.get_prompt()
-            if canvas_context:
-                system_content += f"\n\n【当前画布状态】\n{canvas_context}"
+            system_content = self._build_system_prompt(skill, canvas_context)
 
             messages = [
                 {"role": "system", "content": system_content},
                 {"role": "user", "content": text},
             ]
 
-            # 3. 获取当前 Skill 的工具列表（OpenAI 格式）
-            skill_tool_names = [t.__name__ for t in skill.get_tools()]
-            openai_tools = ToolRegistry.get_openai_tools(skill_tool_names)
+            # 3. 所有工具全部提供给 LLM（不按 skill 限制）
+            openai_tools = self.all_tools
 
             # 4. 调用 LLM（8秒超时）
             import asyncio as _asyncio
-            logger.info(f"调用 LLM({self.model})，工具列表: {skill_tool_names}")
+            logger.info(f"调用 LLM({self.model})，可用工具数: {len(openai_tools)}")
 
             try:
                 response = await _asyncio.wait_for(
@@ -126,9 +147,8 @@ class Agent:
             message = response.choices[0].message
             actions = []
 
-            # 5. 处理工具调用
+            # 5. 处理工具调用（支持多工具连续调用）
             if message.tool_calls:
-                # 将助手消息（含 tool_calls）加入对话
                 messages.append(message.model_dump())
 
                 for tc in message.tool_calls:
@@ -188,6 +208,48 @@ class Agent:
                 "reply": "抱歉，处理指令时出错了，请稍后重试",
                 "actions": [],
             }
+
+    def _local_fallback(self, text: str) -> Dict[str, Any]:
+        """
+        LLM 超时时的本地降级解析
+
+        Args:
+            text: 用户输入文本
+
+        Returns:
+            解析结果
+        """
+        from app.skills.draw.tools import VALID_SHAPES, VALID_COLORS, VALID_POSITIONS, VALID_SIZES
+
+        # 简单关键词匹配
+        detected_shape = None
+        for shape in VALID_SHAPES:
+            if shape in text:
+                detected_shape = shape
+                break
+
+        # 中文形状名映射
+        shape_map = {
+            "圆": "circle", "方块": "rectangle", "矩形": "rectangle",
+            "三角": "triangle", "直线": "line", "星": "star",
+            "菱": "diamond", "箭头": "arrow", "六边": "hexagon"
+        }
+        if not detected_shape:
+            for cn, en in shape_map.items():
+                if cn in text:
+                    detected_shape = en
+                    break
+
+        if detected_shape:
+            return {
+                "reply": f"好的，画一个{detected_shape}",
+                "actions": [{"tool": "draw_shape", "params": {"shape_type": detected_shape}}],
+            }
+
+        return {
+            "reply": "抱歉，我没太听清，你能再说一次吗？",
+            "actions": [],
+        }
 
 
 # 全局 Agent 实例

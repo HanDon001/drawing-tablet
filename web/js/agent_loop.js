@@ -442,54 +442,10 @@
         },
 
         /**
-         * 执行 Agent 下发的动作
+         * 执行 Agent 下发的动作（委托给 VC.Cmd 完整工具路由）
          */
         async _executeAction(action) {
-            const { tool, params } = action;
-
-            switch (tool) {
-                case 'draw_shape': {
-                    const pos = VC.Canvas.parsePosition(params.position || 'center');
-                    const size = VC.Canvas.parseSize(params.size || 'medium');
-                    VC.Cmd.drawShape({
-                        shape: params.shape_type || 'circle',
-                        color: params.color || 'black',
-                        x: pos.x,
-                        y: pos.y,
-                        width: size.w,
-                        height: size.h,
-                        tag: params.tag
-                    });
-                    break;
-                }
-                case 'edit_shape': {
-                    // 根据 tag 找到对象并修改
-                    const obj = VC.State.objects.find(o =>
-                        o.tag === params.target_tag || o.id === params.target_tag
-                    );
-                    if (obj) {
-                        if (params.new_color) obj.color = params.new_color;
-                        if (params.new_size) {
-                            const s = VC.Canvas.parseSize(params.new_size);
-                            obj.width = s.w;
-                            obj.height = s.h;
-                        }
-                        VC.State.emit('objectsChange');
-                    }
-                    break;
-                }
-                case 'delete_shape': {
-                    const idx = VC.State.objects.findIndex(o =>
-                        o.tag === params.target_tag || o.id === params.target_tag
-                    );
-                    if (idx !== -1) {
-                        VC.State.objects.splice(idx, 1);
-                        VC.State.emit('objectsChange');
-                    }
-                    break;
-                }
-            }
-
+            VC.Cmd.execute(action);
             VC.Canvas.render();
             this._syncCanvas();
         },

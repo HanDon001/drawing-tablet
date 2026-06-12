@@ -63,11 +63,13 @@ class CanvasState:
             return "画布为空，没有任何图形。"
 
         pos_names = {
-            "center": "中间", "left_top": "左上角", "right_top": "右上角",
-            "left_bottom": "左下角", "right_bottom": "右下角",
+            "center": "中间", "left_top": "左上角", "top": "上方", "right_top": "右上角",
+            "left": "左边", "right": "右边",
+            "left_bottom": "左下角", "bottom": "下方", "right_bottom": "右下角",
         }
         shape_names = {
             "circle": "圆", "rectangle": "方块", "triangle": "三角形", "line": "线",
+            "star": "星", "diamond": "菱形", "arrow": "箭头", "hexagon": "六边形",
         }
 
         descs = []
@@ -77,7 +79,9 @@ class CanvasState:
             color = obj.get("color", "")
             tag = obj.get("tag", "")
             tag_info = f'，叫"{tag}"' if tag else ""
-            descs.append(f"{pos}有一个{color}的{shape}{tag_info}")
+            opacity = obj.get("opacity", 1)
+            opacity_info = f"，透明度{opacity}" if opacity < 1 else ""
+            descs.append(f"{pos}有一个{color}的{shape}{tag_info}{opacity_info}")
 
         return f"画布上有{len(self.objects)}个图形：{'；'.join(descs)}。"
 
@@ -140,7 +144,10 @@ class UserPreferences:
 
         if self.shape_freq:
             top_shape = max(self.shape_freq, key=self.shape_freq.get)
-            shape_names = {"circle": "圆", "rectangle": "方块", "triangle": "三角形", "line": "线"}
+            shape_names = {
+                "circle": "圆", "rectangle": "方块", "triangle": "三角形", "line": "线",
+                "star": "星", "diamond": "菱形", "arrow": "箭头", "hexagon": "六边形",
+            }
             name = shape_names.get(top_shape, top_shape)
             if self.shape_freq[top_shape] >= 2:
                 suggestions.append(f"常画{name}")
