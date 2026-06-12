@@ -192,10 +192,16 @@
                 this._updateVoiceUI(newState);
             });
 
-            // 语音识别结果（增量 + 最终）
+            // 语音识别结果
             VC.State.on('recognized', ({ text, isFinal }) => {
                 this._showTranscript(text);
-                if (isFinal) {
+                if (!isFinal) return;
+
+                // Agent 模式 → 走 Agent
+                if (window.agentRunning) {
+                    VC.AgentLoop.sendText(text);
+                } else {
+                    // 普通模式 → 走 LLM
                     VC.Cmd.processText(text);
                 }
             });
