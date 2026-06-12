@@ -17,12 +17,16 @@ class AppSettings(BaseSettings):
 
     # 通义千问配置
     DASHSCOPE_API_KEY: str = Field(..., description="通义千问API密钥")
-    LLM_MODEL: str = Field(default="qwen-plus", description="LLM模型名称")
+    DASHSCOPE_BASE_URL: str = Field(
+        default="https://dashscope.aliyuncs.com/compatible-mode/v1",
+        description="通义千问OpenAI兼容API地址"
+    )
+    LLM_MODEL: str = Field(default="qwen3.6-plus", description="LLM模型名称")
 
     # 小米 MiMo 配置
     MIMO_API_KEY: str = Field(..., description="小米MiMo API密钥")
     MIMO_API_BASE: str = Field(
-        default="https://api.xiaomimimo.com/v1",
+        default="https://token-plan-cn.xiaomimimo.com/anthropic",
         description="小米MiMo API基础URL"
     )
 

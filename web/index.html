@@ -115,11 +115,16 @@
     <!-- 顶部导航栏 -->
     <header class="bg-deep-brown text-white px-4 py-2 flex items-center justify-between shadow-lg z-50 flex-shrink-0">
         <div class="flex items-center gap-2">
-            <div class="w-7 h-7 rounded-full bg-warm-orange flex items-center justify-center"><i class="fas fa-palette text-xs"></i></div>
+            <a href="/site/index.html" class="w-7 h-7 rounded-full bg-warm-orange flex items-center justify-center hover:bg-orange-400 transition-colors" title="返回官网">
+                <i class="fas fa-palette text-xs"></i>
+            </a>
             <h1 class="font-display text-base tracking-wide">VoiceCanvas</h1>
             <span class="text-[9px] bg-white/20 px-1.5 py-0.5 rounded hidden sm:inline">PRO v1.0</span>
         </div>
         <div class="flex items-center gap-4 text-xs">
+            <a href="/site/index.html" class="text-light-brown/60 hover:text-white transition-colors hidden sm:inline">
+                <i class="fas fa-home mr-1"></i>官网
+            </a>
             <div id="statusIndicator" class="flex items-center gap-1.5 text-light-brown/80">
                 <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span><span>就绪</span>
             </div>
@@ -225,9 +230,14 @@
             </div>
 
             <!-- 底部快捷操作 -->
-            <div class="p-3 border-t border-light-brown bg-cream/20 flex gap-2">
-                <button onclick="toolAction('undo')" class="flex-1 py-2 rounded-lg bg-white border border-light-brown text-mid-brown text-[10px] font-medium hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"><i class="fas fa-undo mr-1"></i>Undo</button>
-                <button onclick="toolAction('clear')" class="flex-1 py-2 rounded-lg bg-white border border-light-brown text-mid-brown text-[10px] font-medium hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"><i class="fas fa-trash-alt mr-1"></i>Clear</button>
+            <div class="p-3 border-t border-light-brown bg-cream/20 space-y-2">
+                <div class="flex gap-2">
+                    <button onclick="VC.Cmd.undo()" class="flex-1 py-2 rounded-lg bg-white border border-light-brown text-mid-brown text-[10px] font-medium hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"><i class="fas fa-undo mr-1"></i>Undo</button>
+                    <button onclick="VC.Cmd.clearAll()" class="flex-1 py-2 rounded-lg bg-white border border-light-brown text-mid-brown text-[10px] font-medium hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"><i class="fas fa-trash-alt mr-1"></i>Clear</button>
+                </div>
+                <button id="aiDemoBtn" onclick="VC.Agent.demonstrate()" class="w-full py-2 rounded-lg bg-purple-500 text-white text-[10px] font-medium hover:bg-purple-600 transition-all">
+                    <i class="fas fa-robot mr-1"></i>AI 创作演示
+                </button>
             </div>
         </aside>
 
@@ -261,261 +271,38 @@
         </aside>
     </main>
 
+    <!-- 模块化脚本 -->
+    <script src="js/vc.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/canvas.js"></script>
+    <script src="js/voice.js"></script>
+    <script src="js/parser.js"></script>
+    <script src="js/cmd.js"></script>
+    <script src="js/agent.js"></script>
+    <script src="js/log.js"></script>
+    <script src="js/ui.js"></script>
+
+    <!-- 应用初始化 -->
     <script>
-        // ================= 核心状态与映射字典 =================
-        const state = { objects: [], history: [], selectedObjectId: null, isListening: false, isSpeaking: false, reqCounter: 0 };
-        const POSITION_MAP = {
-            'left_top': {x:0.2,y:0.2,l:'左上'},'top':{x:0.5,y:0.2,l:'上'},'right_top':{x:0.8,y:0.2,l:'右上'},
-            'left':{x:0.2,y:0.5,l:'左'},'center':{x:0.5,y:0.5,l:'中'},'right':{x:0.8,y:0.5,l:'右'},
-            'left_bottom':{x:0.2,y:0.8,l:'左下'},'bottom':{x:0.5,y:0.8,l:'下'},'right_bottom':{x:0.8,y:0.8,l:'右下'}
-        };
-        const COLOR_MAP = { '红':'#EF4444','蓝':'#3B82F6','绿':'#10B981','黄':'#F59E0B','黑':'#1F2937','白':'#FFFFFF','橙':'#F97316','紫':'#8B5CF6','粉':'#EC4899','灰':'#6B7280' };
-        const SIZE_MAP = { '小':'small', '中':'medium', '大':'large' };
-        const SHAPE_MAP = { '圆':'circle','方块':'rectangle','矩形':'rectangle','三角':'triangle','直线':'line','星':'star','菱':'diamond','箭头':'arrow','六边':'hexagon' };
+        window.addEventListener('DOMContentLoaded', async () => {
+            // 初始化 Canvas
+            VC.Canvas.init(document.getElementById('mainCanvas'));
 
-        // ================= DOM & Init =================
-        const canvas = document.getElementById('mainCanvas');
-        const ctx = canvas.getContext('2d');
+            // 初始化持久化
+            VC.Store.init();
 
-        function initUI() {
-            const fillDiv = document.getElementById('fillSwatches');
-            const strokeDiv = document.getElementById('strokeSwatches');
+            // 初始化日志
+            VC.Log.init('logContainer');
 
-            // 无填充/无描边
-            fillDiv.innerHTML = `<div class="swatch flex items-center justify-center border border-dashed border-mid-brown/30 text-mid-brown/40 hover:border-warm-orange" style="background-color: transparent;" data-color="none" onclick="toolAction('fill', 'none')" title="无填充"><i class="fas fa-ban" style="font-size:8px"></i></div>`;
-            strokeDiv.innerHTML = `<div class="swatch flex items-center justify-center border border-dashed border-mid-brown/30 text-mid-brown/40 hover:border-warm-orange" style="background-color: transparent;" data-color="none" onclick="toolAction('stroke', 'none')" title="无描边"><i class="fas fa-ban" style="font-size:8px"></i></div>`;
+            // 初始化 UI
+            VC.UI.init();
 
-            Object.entries(COLOR_MAP).forEach(([name, hex]) => {
-                fillDiv.innerHTML += `<div class="swatch" style="background-color:${hex}" data-color="${hex}" onclick="toolAction('fill', '${hex}')" title="填充:${name}"></div>`;
-                strokeDiv.innerHTML += `<div class="swatch" style="background-color:${hex}" data-color="${hex}" onclick="toolAction('stroke', '${hex}')" title="描边:${name}"></div>`;
-            });
-        }
+            // 初始化语音服务
+            await VC.Voice.init();
 
-        function togglePanel(id) {
-            const panel = document.getElementById(id);
-            const arrow = document.getElementById(id + 'Arrow');
-            if(panel.style.display === 'none') { panel.style.display = 'block'; arrow.classList.add('open'); }
-            else { panel.style.display = 'none'; arrow.classList.remove('open'); }
-        }
-
-        // ================= 侧边栏工具动作 =================
-        function toolAction(type, value) {
-            let commandText = '';
-            const hasSelection = !!state.selectedObjectId;
-
-            if (type === 'draw') {
-                const shapeName = Object.keys(SHAPE_MAP).find(k => SHAPE_MAP[k] === value) || value;
-                commandText = `画一个${shapeName}`;
-                document.querySelectorAll('.tool-btn').forEach(b => b.classList.toggle('active', b.dataset.shape === value));
-            } else if (type === 'fill') {
-                if (!hasSelection) return showToast('请先选择对象');
-                commandText = value === 'none' ? '无填充' : '改颜色';
-                document.querySelectorAll('#fillSwatches .swatch').forEach(s => s.classList.toggle('active', s.dataset.color === value));
-            } else if (type === 'stroke') {
-                if (!hasSelection) return showToast('请先选择对象');
-                commandText = value === 'none' ? '无描边' : '加描边';
-                document.querySelectorAll('#strokeSwatches .swatch').forEach(s => s.classList.toggle('active', s.dataset.color === value));
-            } else if (type === 'size') {
-                if (!hasSelection) return showToast('请先选择对象');
-                commandText = `变${Object.keys(SIZE_MAP).find(k => SIZE_MAP[k] === value)}`;
-                document.querySelectorAll('.capsule-btn[data-size]').forEach(b => b.classList.toggle('active', b.dataset.size === value));
-            } else if (type === 'opacity') {
-                if (!hasSelection) return showToast('请先选择对象');
-                commandText = `变透明`;
-                document.querySelectorAll('.capsule-btn[data-opacity]').forEach(b => b.classList.toggle('active', b.dataset.opacity === value));
-            } else if (type === 'position') {
-                if (!hasSelection) return showToast('请先选择对象');
-                commandText = `移到${POSITION_MAP[value]?.l || '中'}`;
-                document.querySelectorAll('.pos-dot').forEach(d => d.classList.toggle('active', d.dataset.pos === value));
-            } else if (type === 'undo') { commandText = '撤销'; }
-            else if (type === 'clear') { commandText = '清空'; }
-
-            if (commandText) {
-                addLog('ui', `UI: ${commandText}`);
-                processCommand(commandText, type, value);
-            }
-        }
-
-        function showToast(msg) { addLog('system', `⚠️ ${msg}`); speak(msg); }
-
-        // ================= Canvas 渲染引擎 =================
-        function resizeCanvas() { const r = canvas.parentElement.getBoundingClientRect(); canvas.width = r.width; canvas.height = r.height; renderAll(); }
-
-        function renderAll() {
-            ctx.clearRect(0, 0, canvas.width, canvas.height);
-            document.getElementById('emptyHint').style.display = state.objects.length === 0 ? 'flex' : 'none';
-
-            state.objects.forEach(obj => {
-                const isSel = obj.id === state.selectedObjectId;
-                const px = POSITION_MAP[obj.position]?.x || 0.5;
-                const py = POSITION_MAP[obj.position]?.y || 0.5;
-                const cx = canvas.width * px; const cy = canvas.height * py;
-                const base = 30; const mul = obj.size === 'small' ? 1 : obj.size === 'large' ? 3 : 2; const sz = base * mul;
-
-                ctx.globalAlpha = obj.opacity || 1;
-                ctx.fillStyle = obj.color || '#1F2937';
-                ctx.strokeStyle = obj.strokeColor || 'transparent';
-                ctx.lineWidth = 2;
-
-                if (obj.shape === 'circle') { ctx.beginPath(); ctx.arc(cx, cy, sz, 0, Math.PI * 2); if(obj.color!=='none') ctx.fill(); if(obj.strokeColor!=='none') ctx.stroke(); }
-                else if (obj.shape === 'rectangle') { if(obj.color!=='none') ctx.fillRect(cx - sz, cy - sz * 0.8, sz * 2, sz * 1.6); if(obj.strokeColor!=='none') ctx.strokeRect(cx - sz, cy - sz * 0.8, sz * 2, sz * 1.6); }
-                else if (obj.shape === 'triangle') { ctx.beginPath(); ctx.moveTo(cx, cy - sz); ctx.lineTo(cx - sz, cy + sz * 0.8); ctx.lineTo(cx + sz, cy + sz * 0.8); ctx.closePath(); if(obj.color!=='none') ctx.fill(); if(obj.strokeColor!=='none') ctx.stroke(); }
-                else if (obj.shape === 'line') { ctx.beginPath(); ctx.moveTo(cx - sz, cy); ctx.lineTo(cx + sz, cy); ctx.strokeStyle = obj.color === 'none' ? '#1F2937' : obj.color; ctx.lineWidth = 3; ctx.stroke(); }
-                else if (obj.shape === 'star') { drawStar(ctx, cx, cy, 5, sz, sz / 2, obj); }
-                else if (obj.shape === 'diamond') { ctx.beginPath(); ctx.moveTo(cx, cy - sz); ctx.lineTo(cx + sz * 0.7, cy); ctx.lineTo(cx, cy + sz); ctx.lineTo(cx - sz * 0.7, cy); ctx.closePath(); if(obj.color!=='none') ctx.fill(); if(obj.strokeColor!=='none') ctx.stroke(); }
-                else if (obj.shape === 'arrow') { ctx.beginPath(); ctx.moveTo(cx - sz, cy); ctx.lineTo(cx + sz, cy); ctx.lineTo(cx + sz - 10, cy - 10); ctx.moveTo(cx + sz, cy); ctx.lineTo(cx + sz - 10, cy + 10); ctx.strokeStyle = obj.color === 'none' ? '#1F2937' : obj.color; ctx.lineWidth = 3; ctx.stroke(); }
-
-                if (isSel) {
-                    ctx.globalAlpha = 1; ctx.setLineDash([4, 4]); ctx.strokeStyle = '#E69F56'; ctx.lineWidth = 1.5;
-                    ctx.strokeRect(cx - sz - 10, cy - sz - 10, (sz * 2) + 20, (sz * 2) + 20); ctx.setLineDash([]);
-                }
-            });
-            ctx.globalAlpha = 1;
-            updateObjectListUI();
-        }
-
-        function drawStar(ctx, cx, cy, spikes, outerR, innerR, obj) { let rot = Math.PI / 2 * 3; let x = cx; let y = cy; let step = Math.PI / spikes; ctx.beginPath(); ctx.moveTo(cx, cy - outerR); for (let i = 0; i < spikes; i++) { x = cx + Math.cos(rot) * outerR; y = cy + Math.sin(rot) * outerR; ctx.lineTo(x, y); rot += step; x = cx + Math.cos(rot) * innerR; y = cy + Math.sin(rot) * innerR; ctx.lineTo(x, y); rot += step; } ctx.lineTo(cx, cy - outerR); ctx.closePath(); if(obj.color!=='none') ctx.fill(); if(obj.strokeColor!=='none') ctx.stroke(); }
-
-        // ================= 图层列表 UI =================
-        function updateObjectListUI() {
-            document.getElementById('objCountSide').textContent = state.objects.length;
-            const list = document.getElementById('objectList');
-            if (state.objects.length === 0) { list.innerHTML = '<div class="text-center text-[10px] text-mid-brown/40 py-6">暂无图层</div>'; return; }
-            list.innerHTML = '';
-            [...state.objects].reverse().forEach(obj => {
-                const nameMap = {circle:'圆形', rectangle:'矩形', triangle:'三角', line:'直线', star:'星形', diamond:'菱形', arrow:'箭头', hexagon:'六边'};
-                const div = document.createElement('div');
-                div.className = `layer-item ${obj.id === state.selectedObjectId ? 'active' : ''}`;
-                div.onclick = () => selectObject(obj.id);
-
-                // 简易 CSS 缩略图生成
-                let thumbStyle = `background-color:${obj.color==='none'?'transparent':obj.color};`;
-                if(obj.shape==='circle') thumbStyle += 'border-radius:50%;';
-                if(obj.shape==='diamond') thumbStyle += 'transform: rotate(45deg) scale(0.8);';
-                if(obj.shape==='line') thumbStyle += 'background-color:transparent; border-bottom: 2px solid black; height: 0; width: 80%; margin-top:10px;';
-
-                div.innerHTML = `
-                    <div class="layer-thumb" style="${thumbStyle}"></div>
-                    <div class="flex-1 text-[11px] text-body-text truncate font-medium">${obj.tag || nameMap[obj.shape]}</div>
-                    <div class="layer-actions">
-                        <button class="layer-action-btn" onclick="event.stopPropagation(); deleteObject('${obj.id}')"><i class="fas fa-trash-alt"></i></button>
-                    </div>
-                `;
-                list.appendChild(div);
-            });
-        }
-
-        function selectObject(id) {
-            state.selectedObjectId = id;
-            const obj = state.objects.find(o => o.id === id);
-            if (obj) {
-                document.querySelectorAll('#fillSwatches .swatch').forEach(s => s.classList.toggle('active', s.dataset.color === obj.color));
-                document.querySelectorAll('#strokeSwatches .swatch').forEach(s => s.classList.toggle('active', s.dataset.color === obj.strokeColor));
-                document.querySelectorAll('.capsule-btn[data-size]').forEach(b => b.classList.toggle('active', b.dataset.size === obj.size));
-                document.querySelectorAll('.capsule-btn[data-opacity]').forEach(b => b.classList.toggle('active', b.dataset.opacity === (obj.opacity||1).toString()));
-                document.querySelectorAll('.pos-dot').forEach(d => d.classList.toggle('active', d.dataset.pos === obj.position));
-            }
-            renderAll();
-        }
-
-        function deleteObject(id) {
-            saveHistory();
-            state.objects = state.objects.filter(o => o.id !== id);
-            if (state.selectedObjectId === id) state.selectedObjectId = null;
-            renderAll();
-            speak('已删除');
-        }
-
-        // ================= 指令处理逻辑 =================
-        function processCommand(text, uiType=null, uiValue=null) {
-            const fastCmd = detectFastCommand(text);
-            if (fastCmd) { executeFastCommand(fastCmd); return; }
-
-            const result = parseIntent(text);
-
-            // UI 传参覆盖
-            if (uiType === 'fill') result.params.newColor = uiValue;
-            if (uiType === 'stroke') result.params.newStrokeColor = uiValue;
-            if (uiType === 'size') result.params.newSize = uiValue;
-            if (uiType === 'opacity') result.params.newOpacity = parseFloat(uiValue);
-            if (uiType === 'position') result.params.newPosition = uiValue;
-
-            executeAction(result);
-        }
-
-        function parseIntent(text) {
-            let action = { tool: 'unknown', params: {}, reply: '未理解。' };
-            const isEdit = ['变','改','换','移','填充','描边','透明','无'].some(k => text.includes(k));
-
-            if (isEdit && state.selectedObjectId) {
-                action.tool = 'edit_shape'; action.params.targetId = state.selectedObjectId;
-                for (let [k, v] of Object.entries(COLOR_MAP)) { if (text.includes(k)) { action.params.newColor = v; break; } }
-                for (let [k, v] of Object.entries(SIZE_MAP)) { if (text.includes(k)) { action.params.newSize = v; break; } }
-                for (let [k, v] of Object.entries(POSITION_MAP)) { if (text.includes(v.l)) { action.params.newPosition = k; break; } }
-                if (text.includes('透明')) action.params.newOpacity = text.includes('不') ? 1 : 0.4;
-                if (text.includes('描边')) action.params.newStrokeColor = action.params.newColor || '#1F2937';
-                if (text.includes('无填充')) action.params.newColor = 'none';
-                if (text.includes('无描边')) action.params.newStrokeColor = 'none';
-                action.reply = "已修改。";
-            } else {
-                const isDraw = ['画','加'].some(k => text.includes(k));
-                if (isDraw) {
-                    action.tool = 'draw_shape';
-                    for (let [k, v] of Object.entries(SHAPE_MAP)) { if (text.includes(k)) { action.params.shape_type = v; break; } }
-                    if (!action.params.shape_type) action.params.shape_type = 'circle';
-                    action.params.color = '#1F2937';
-                    for (let [k, v] of Object.entries(COLOR_MAP)) { if (text.includes(k)) { action.params.color = v; break; } }
-                    action.params.size = 'medium';
-                    for (let [k, v] of Object.entries(SIZE_MAP)) { if (text.includes(k)) { action.params.size = v; break; } }
-                    action.params.position = 'center';
-                    for (let [k, v] of Object.entries(POSITION_MAP)) { if (text.includes(v.l)) { action.params.position = k; break; } }
-                    action.params.opacity = 1; action.params.strokeColor = 'none';
-                    action.reply = "已绘制。";
-                }
-            }
-            return action;
-        }
-
-        function executeAction(action) {
-            if (action.tool === 'draw_shape') {
-                saveHistory();
-                const newObj = { id: 'obj_' + Date.now(), shape: action.params.shape_type, color: action.params.color, size: action.params.size, position: action.params.position, opacity: action.params.opacity, strokeColor: action.params.strokeColor, tag: null };
-                state.objects.push(newObj); state.selectedObjectId = newObj.id; renderAll();
-            } else if (action.tool === 'edit_shape') {
-                saveHistory();
-                const obj = state.objects.find(o => o.id === action.params.targetId);
-                if (obj) {
-                    if (action.params.newColor !== undefined) obj.color = action.params.newColor;
-                    if (action.params.newSize) obj.size = action.params.newSize;
-                    if (action.params.newPosition) obj.position = action.params.newPosition;
-                    if (action.params.newOpacity !== undefined) obj.opacity = action.params.newOpacity;
-                    if (action.params.newStrokeColor !== undefined) obj.strokeColor = action.params.newStrokeColor;
-                    renderAll();
-                }
-            }
-            speak(action.reply); addLog('ai', action.reply);
-        }
-
-        function detectFastCommand(t) { if(['撤销','撤回'].some(k=>t.includes(k))) return 'undo'; if(['清空','清除'].some(k=>t.includes(k))) return 'clear'; if(['删除'].some(k=>t.includes(k))) return 'delete'; return null; }
-        function executeFastCommand(cmd) { if(cmd==='undo'){ if(state.history.length>0){ state.objects=state.history.pop(); state.selectedObjectId=state.objects.length>0?state.objects[state.objects.length-1].id:null; renderAll(); speak('已撤销'); } else speak('无法撤销'); } else if(cmd==='clear'){ saveHistory(); state.objects=[]; state.selectedObjectId=null; renderAll(); speak('已清空'); } else if(cmd==='delete'){ if(!state.selectedObjectId) return; saveHistory(); state.objects=state.objects.filter(o=>o.id!==state.selectedObjectId); state.selectedObjectId=null; renderAll(); speak('已删除'); } }
-        function saveHistory() { state.history.push(JSON.parse(JSON.stringify(state.objects))); if (state.history.length > 15) state.history.shift(); }
-
-        // ================= 语音与日志 =================
-        const micBtn = document.getElementById('micBtn');
-        const transcriptText = document.getElementById('transcriptText');
-        let recognition = null;
-        if ('webkitSpeechRecognition' in window) {
-            recognition = new webkitSpeechRecognition(); recognition.lang = 'zh-CN'; recognition.continuous = false;
-            recognition.onstart = () => { state.isListening = true; micBtn.classList.add('bg-red-500','mic-pulse'); micBtn.classList.remove('bg-warm-orange'); transcriptText.textContent='聆听中...'; transcriptText.classList.remove('opacity-0'); };
-            recognition.onresult = (e) => { const t = e.results[0][0].transcript; transcriptText.textContent = t; addLog('user', t); processCommand(t); };
-            recognition.onend = () => { state.isListening = false; micBtn.classList.remove('bg-red-500','mic-pulse'); micBtn.classList.add('bg-warm-orange'); setTimeout(()=>transcriptText.classList.add('opacity-0'),1500); };
-            micBtn.addEventListener('click', () => { if(state.isSpeaking) return; state.isListening ? recognition.stop() : recognition.start(); });
-        }
-        function speak(t){ if(!window.speechSynthesis) return; window.speechSynthesis.cancel(); const u=new SpeechSynthesisUtterance(t); u.lang='zh-CN'; u.onstart=()=>{state.isSpeaking=true;}; u.onend=()=>{state.isSpeaking=false;}; window.speechSynthesis.speak(u); }
-        function addLog(role, text){ const c=document.getElementById('logContainer'); const d=document.createElement('div'); d.className='log-enter flex gap-2 items-start'; const icon=role==='user'?'fa-user':role==='ui'?'fa-mouse-pointer':role==='system'?'fa-exclamation-circle':'fa-robot'; const bg=role==='user'?'bg-deep-brown/10':role==='ui'?'bg-mid-brown/10':role==='system'?'bg-red-100':'bg-warm-orange/10'; const col=role==='user'?'text-deep-brown':role==='ui'?'text-mid-brown':role==='system'?'text-red-500':'text-warm-orange'; d.innerHTML=`<div class="w-4 h-4 rounded-full ${bg} flex items-center justify-center flex-shrink-0 mt-0.5"><i class="fas ${icon} text-[8px] ${col}"></i></div><div class="text-[11px] text-body-text/70 leading-relaxed">${text}</div>`; c.appendChild(d); c.scrollTop=c.scrollHeight; }
-
-        window.onload = () => { initUI(); resizeCanvas(); addLog('system', '引擎初始化完成。'); };
-        window.addEventListener('resize', resizeCanvas);
+            console.log('[App] VoiceCanvas 初始化完成');
+        });
     </script>
 </body>
 </html>
