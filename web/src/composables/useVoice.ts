@@ -45,7 +45,8 @@ export function useVoice() {
 
     recognition.onresult = (event: any) => {
       const result = event.results[0][0].transcript
-      transcript.value = result
+      // 添加时间戳确保每次识别都是唯一的值
+      transcript.value = `${result}__${Date.now()}`
       logger.info('ASR 识别结果:', result)
     }
 

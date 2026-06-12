@@ -164,11 +164,14 @@ async function handleSlowCommand(text: string): Promise<void> {
 watch(transcript, async (newText) => {
   if (!newText) return
 
-  logger.info('收到语音输入:', newText)
-  statusText.value = `识别到: ${newText}`
+  // 提取实际文本（去掉时间戳后缀）
+  const actualText = newText.split('__')[0]
+
+  logger.info('收到语音输入:', actualText)
+  statusText.value = `识别到: ${actualText}`
 
   // 检查快通道
-  const fastCommand = detectFastCommand(newText)
+  const fastCommand = detectFastCommand(actualText)
   if (fastCommand) {
     const handled = await handleFastCommand(fastCommand)
     if (handled) {
@@ -178,15 +181,23 @@ watch(transcript, async (newText) => {
   }
 
   // 走慢通道
-  await handleSlowCommand(newText)
+  await handleSlowCommand(actualText)
 })
 
-// 监听对象变化，自动保存
+// 监听对象变化，防抖自动保存
 watch(
   () => canvasStore.objects,
   () => {
     renderCanvas()
-    canvasStore.saveToLocal()
+
+    // 防抖保存（2秒）
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer)
+    }
+    saveDebounceTimer = setTimeout(() => {
+      canvasStore.saveToLocal()
+      logger.debug('画布已自动保存')
+    }, 2000)
   },
   { deep: true }
 )
