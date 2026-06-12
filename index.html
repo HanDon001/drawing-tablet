@@ -1,0 +1,557 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceCanvas - 用声音描绘心中的世界</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'deep-brown': '#7A4F28',
+                        'mid-brown': '#9B6A3A',
+                        'light-brown': '#E8D9C7',
+                        'warm-orange': '#E69F56',
+                        'cream': '#F8F5F1',
+                        'body-text': '#333333',
+                    },
+                    fontFamily: {
+                        'display': ['Playfair Display', 'serif'],
+                        'body': ['Noto Sans SC', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --deep-brown: #7A4F28;
+            --mid-brown: #9B6A3A;
+            --light-brown: #E8D9C7;
+            --warm-orange: #E69F56;
+            --cream: #F8F5F1;
+            --white: #FFFFFF;
+            --body-text: #333333;
+            --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Noto Sans SC', sans-serif; color: var(--body-text); overflow-x: hidden; background: var(--white); }
+
+        ::-webkit-scrollbar { width: 8px; }
+        ::-webkit-scrollbar-track { background: var(--light-brown); }
+        ::-webkit-scrollbar-thumb { background: var(--mid-brown); border-radius: 4px; }
+
+        /* 粒子画布 */
+        #particleCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; opacity: 0.4; }
+
+        /* 流体渐变背景 */
+        .fluid-bg {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; opacity: 0.08;
+            background: radial-gradient(ellipse 600px 600px at 20% 30%, var(--warm-orange), transparent),
+                        radial-gradient(ellipse 500px 500px at 80% 70%, var(--mid-brown), transparent),
+                        radial-gradient(ellipse 400px 400px at 50% 50%, var(--light-brown), transparent);
+            animation: fluidMove 20s ease-in-out infinite;
+        }
+        @keyframes fluidMove {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(30px, -20px) scale(1.05); }
+            50% { transform: translate(-20px, 30px) scale(0.95); }
+            75% { transform: translate(20px, 20px) scale(1.02); }
+        }
+
+        /* 噪点纹理 */
+        .noise-overlay {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; opacity: 0.03;
+            background-image: url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+            background-size: 128px 128px;
+        }
+
+        /* 滚动入场动画 */
+        .reveal { opacity: 0; transition: opacity 0.9s var(--ease-smooth), transform 0.9s var(--ease-smooth); }
+        .reveal-up { transform: translateY(60px); }
+        .reveal-left { transform: translateX(-80px); }
+        .reveal-right { transform: translateX(80px); }
+        .reveal-scale { transform: scale(0.85); }
+        .revealed { opacity: 1 !important; transform: translateY(0) translateX(0) scale(1) !important; filter: blur(0) !important; }
+        .delay-100 { transition-delay: 0.1s !important; }
+        .delay-200 { transition-delay: 0.2s !important; }
+        .delay-300 { transition-delay: 0.3s !important; }
+        .delay-400 { transition-delay: 0.4s !important; }
+
+        /* 导航栏 */
+        .main-nav { background: var(--light-brown); transition: all 0.5s var(--ease-smooth); }
+        .main-nav.scrolled { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; background: rgba(232, 217, 199, 0.95); backdrop-filter: blur(12px); box-shadow: 0 4px 30px rgba(122, 79, 40, 0.15); animation: navSlideDown 0.6s var(--ease-bounce); }
+        @keyframes navSlideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+        .nav-link { position: relative; transition: color 0.3s var(--ease-smooth); }
+        .nav-link::after { content: ''; position: absolute; bottom: -4px; left: 0; width: 0; height: 2px; background: var(--warm-orange); transition: width 0.4s var(--ease-out-expo); }
+        .nav-link:hover::after { width: 100%; }
+        .nav-link:hover { color: var(--deep-brown); }
+
+        /* 按钮通用样式 */
+        .btn-primary { background: var(--warm-orange); color: white; position: relative; overflow: hidden; transition: all 0.4s var(--ease-smooth); }
+        .btn-primary:hover { background: var(--warm-orange); transform: translateY(-2px); box-shadow: 0 8px 25px rgba(122, 79, 40, 0.35); }
+        .btn-outline { border: 2px solid var(--deep-brown); color: var(--deep-brown); background: transparent; position: relative; overflow: hidden; transition: all 0.4s var(--ease-smooth); z-index: 1; }
+        .btn-outline::before { content: ''; position: absolute; top: 0; left: 0; width: 0; height: 100%; background: var(--deep-brown); transition: width 0.4s var(--ease-out-expo); z-index: -1; }
+        .btn-outline:hover { color: white; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(122, 79, 40, 0.25); }
+        .btn-outline:hover::before { width: 100%; }
+
+        /* 波纹效果 */
+        .ripple-btn { position: relative; overflow: hidden; }
+        .ripple-effect { position: absolute; border-radius: 50%; background: rgba(255, 255, 255, 0.35); transform: scale(0); animation: rippleAnim 0.6s ease-out forwards; pointer-events: none; }
+        @keyframes rippleAnim { to { transform: scale(4); opacity: 0; } }
+
+        /* 卡片悬浮 */
+        .card-hover { transition: all 0.5s var(--ease-smooth); }
+        .card-hover:hover { transform: translateY(-8px); box-shadow: 0 20px 40px rgba(122, 79, 40, 0.15); }
+
+        /* 光影呼吸 */
+        .breathing-glow { animation: breathGlow 4s ease-in-out infinite; }
+        @keyframes breathGlow { 0%, 100% { box-shadow: 0 0 20px rgba(230, 159, 86, 0.1); } 50% { box-shadow: 0 0 35px rgba(230, 159, 86, 0.25); } }
+
+        /* 脉冲光圈 */
+        .pulse-ring { position: relative; }
+        .pulse-ring::before, .pulse-ring::after { content: ''; position: absolute; top: 50%; left: 50%; width: 100%; height: 100%; border-radius: inherit; border: 2px solid var(--warm-orange); transform: translate(-50%, -50%) scale(1); opacity: 0; }
+        .pulse-ring::before { animation: pulseRing 2s ease-out infinite; }
+        .pulse-ring::after { animation: pulseRing 2s ease-out infinite 1s; }
+        @keyframes pulseRing { 0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; } 100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; } }
+
+        /* 数字递增动画容器 */
+        .counter-value { font-variant-numeric: tabular-nums; }
+
+        /* 轮播 */
+        .carousel-slide { transition: opacity 0.8s var(--ease-smooth), transform 0.8s var(--ease-smooth), filter 0.8s var(--ease-smooth); }
+        .carousel-slide.active { opacity: 1; transform: scale(1); filter: blur(0); }
+        .carousel-slide.inactive { opacity: 0; transform: scale(1.05); filter: blur(4px); position: absolute; top: 0; left: 0; }
+
+        /* 微光浮动 */
+        .sparkle { position: absolute; width: 4px; height: 4px; background: var(--warm-orange); border-radius: 50%; opacity: 0; animation: sparkleFloat 4s ease-in-out infinite; }
+        @keyframes sparkleFloat { 0%, 100% { opacity: 0; transform: translateY(0) scale(0); } 50% { opacity: 0.6; transform: translateY(-30px) scale(1); } }
+
+        /* 流光边框 */
+        @keyframes borderFlow { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+        .flow-border { background: linear-gradient(90deg, var(--light-brown), var(--warm-orange), var(--light-brown), var(--warm-orange)); background-size: 200% 100%; animation: borderFlow 3s linear infinite; }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+            .reveal { opacity: 1; transform: none; filter: none; }
+        }
+    </style>
+</head>
+
+<body class="font-body">
+    <!-- 全局背景效果 -->
+    <div class="fluid-bg" aria-hidden="true"></div>
+    <div class="noise-overlay" aria-hidden="true"></div>
+    <canvas id="particleCanvas" aria-hidden="true"></canvas>
+
+    <!-- ====== 导航栏 ====== -->
+    <nav class="main-nav py-3 px-4 z-40 relative" id="mainNav" role="navigation">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <a href="#" class="flex items-center gap-2" aria-label="VoiceCanvas首页">
+                <div class="w-10 h-10 rounded-full bg-deep-brown flex items-center justify-center">
+                    <i class="fas fa-palette text-white text-lg"></i>
+                </div>
+                <span class="font-display text-deep-brown font-bold text-xl tracking-wide">VoiceCanvas</span>
+            </a>
+            <div class="hidden lg:flex items-center gap-8">
+                <a href="#hero" class="nav-link text-deep-brown font-medium text-sm tracking-wide">HOME</a>
+                <a href="#about" class="nav-link text-deep-brown font-medium text-sm tracking-wide">ABOUT</a>
+                <a href="#features" class="nav-link text-deep-brown font-medium text-sm tracking-wide">FEATURES</a>
+                <a href="#tech" class="nav-link text-deep-brown font-medium text-sm tracking-wide">TECH</a>
+                <a href="#demo" class="nav-link text-deep-brown font-medium text-sm tracking-wide">DEMO</a>
+            </div>
+            <a href="#demo" class="ripple-btn btn-primary px-6 py-2.5 rounded-full text-sm font-medium">
+                <i class="fas fa-microphone mr-2"></i>体验语音绘图
+            </a>
+        </div>
+    </nav>
+
+    <!-- ====== 首屏轮播Hero区 ====== -->
+    <section id="hero" class="relative w-full h-screen overflow-hidden" role="banner">
+        <div class="absolute inset-0" id="carouselContainer">
+            <div class="carousel-slide active absolute inset-0">
+                <img src="https://images.unsplash.com/photo-1513364776144-60967b0f800f?w=1920&q=80" alt="艺术创作" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-r from-deep-brown/70 via-deep-brown/40 to-transparent"></div>
+            </div>
+            <div class="carousel-slide inactive absolute inset-0">
+                <img src="https://images.unsplash.com/photo-1547891654-e66ed7ebb968?w=1920&q=80" alt="色彩表达" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-r from-deep-brown/70 via-deep-brown/40 to-transparent"></div>
+            </div>
+            <div class="carousel-slide inactive absolute inset-0">
+                <img src="https://images.unsplash.com/photo-1558618666-fcd25c85f82e?w=1920&q=80" alt="科技向善" class="w-full h-full object-cover">
+                <div class="absolute inset-0 bg-gradient-to-r from-deep-brown/70 via-deep-brown/40 to-transparent"></div>
+            </div>
+        </div>
+
+        <div class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+            <div class="sparkle" style="top:20%;left:15%;animation-delay:0s;"></div>
+            <div class="sparkle" style="top:40%;left:70%;animation-delay:1s;"></div>
+            <div class="sparkle" style="top:60%;left:30%;animation-delay:2s;"></div>
+        </div>
+
+        <div class="relative z-10 h-full flex items-center max-w-7xl mx-auto px-6">
+            <div class="max-w-2xl">
+                <p class="text-warm-orange font-medium tracking-widest text-sm mb-4 reveal reveal-up">PURE VOICE DRAWING TOOL</p>
+                <h1 class="font-display text-white text-5xl md:text-7xl font-bold leading-tight mb-6 reveal reveal-up delay-100">
+                    找回创作的<br>自由与力量
+                </h1>
+                <p class="text-light-brown/90 text-lg mb-8 reveal reveal-up delay-200">
+                    无需双手，无需视界。VoiceCanvas 以通义千问大模型与语音闭环，让残障人士仅凭声音描绘心中的色彩。</p>
+                <div class="flex gap-4 reveal reveal-up delay-300">
+                    <a href="#demo" class="ripple-btn btn-primary px-8 py-4 rounded-full text-sm font-semibold tracking-wide">
+                        <i class="fas fa-play mr-2"></i>立即体验
+                    </a>
+                    <a href="#about" class="btn-outline px-8 py-4 rounded-full text-sm font-semibold tracking-wide text-white border-white/60 hover:text-white hover:bg-white/10">
+                        了解理念
+                    </a>
+                </div>
+            </div>
+        </div>
+
+        <button class="absolute left-6 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white flex items-center justify-center hover:bg-white/25 transition-all duration-300" onclick="prevSlide()" aria-label="上一张">
+            <i class="fas fa-chevron-left"></i>
+        </button>
+        <button class="absolute right-6 top-1/2 -translate-y-1/2 z-10 w-12 h-12 rounded-full bg-white/10 backdrop-blur-sm border border-white/20 text-white flex items-center justify-center hover:bg-white/25 transition-all duration-300" onclick="nextSlide()" aria-label="下一张">
+            <i class="fas fa-chevron-right"></i>
+        </button>
+        <div class="absolute bottom-8 left-1/2 -translate-x-1/2 z-10 flex gap-3">
+            <button class="w-3 h-3 rounded-full bg-white/50 transition-all duration-400 carousel-dot active" data-index="0" onclick="goToSlide(0)"></button>
+            <button class="w-3 h-3 rounded-full bg-white/50 transition-all duration-400 carousel-dot" data-index="1" onclick="goToSlide(1)"></button>
+            <button class="w-3 h-3 rounded-full bg-white/50 transition-all duration-400 carousel-dot" data-index="2" onclick="goToSlide(2)"></button>
+        </div>
+    </section>
+
+    <!-- ====== 理念介绍模块 ====== -->
+    <section id="about" class="py-24 bg-cream relative overflow-hidden">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="grid lg:grid-cols-2 gap-16 items-center">
+                <div class="reveal reveal-left">
+                    <div class="relative rounded-2xl overflow-hidden group">
+                        <img src="https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?w=800&q=80" alt="艺术表达" class="w-full h-[480px] object-cover transition-transform duration-700 group-hover:scale-105">
+                        <div class="absolute inset-0 bg-gradient-to-t from-deep-brown/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                        <div class="absolute -bottom-4 -right-4 w-24 h-24 bg-warm-orange/20 rounded-2xl -z-10"></div>
+                    </div>
+                </div>
+                <div>
+                    <p class="reveal reveal-up text-warm-orange font-medium tracking-widest text-sm mb-3">OUR MISSION</p>
+                    <h2 class="reveal reveal-up delay-100 font-display text-deep-brown text-4xl md:text-5xl font-bold leading-tight mb-6">
+                        为您开启<br>无碍创作之旅
+                    </h2>
+                    <p class="reveal reveal-up delay-200 text-body-text/70 leading-relaxed mb-4">
+                        肢体不便或视力障碍，不应成为艺术表达的壁垒。我们相信每个人都有创作和表达的权利。</p>
+                    <p class="reveal reveal-up delay-300 text-body-text/70 leading-relaxed mb-8">
+                        VoiceCanvas 利用通义千问大模型与语音交互闭环，将复杂的绘图操作转化为最自然的对话。只需开口，心中的画面便能跃然屏上。</p>
+                    <div class="reveal reveal-up delay-400 flex gap-6">
+                        <div class="group cursor-pointer text-center">
+                            <div class="w-20 h-20 rounded-full bg-light-brown flex items-center justify-center mx-auto mb-3 transition-all duration-500 group-hover:rotate-[15deg] group-hover:shadow-lg group-hover:shadow-warm-orange/20 pulse-ring">
+                                <i class="fas fa-universal-access text-deep-brown text-2xl"></i>
+                            </div>
+                            <span class="text-xs font-semibold text-deep-brown tracking-wider">零门槛</span>
+                        </div>
+                        <div class="group cursor-pointer text-center">
+                            <div class="w-20 h-20 rounded-full bg-light-brown flex items-center justify-center mx-auto mb-3 transition-all duration-500 group-hover:rotate-[15deg] group-hover:shadow-lg group-hover:shadow-warm-orange/20 pulse-ring" style="animation-delay: 0.5s;">
+                                <i class="fas fa-ear-listen text-deep-brown text-2xl"></i>
+                            </div>
+                            <span class="text-xs font-semibold text-deep-brown tracking-wider">强闭环</span>
+                        </div>
+                        <div class="group cursor-pointer text-center">
+                            <div class="w-20 h-20 rounded-full bg-light-brown flex items-center justify-center mx-auto mb-3 transition-all duration-500 group-hover:rotate-[15deg] group-hover:shadow-lg group-hover:shadow-warm-orange/20 pulse-ring" style="animation-delay: 1s;">
+                                <i class="fas fa-brain text-deep-brown text-2xl"></i>
+                            </div>
+                            <span class="text-xs font-semibold text-deep-brown tracking-wider">高智能</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== 核心能力模块 ====== -->
+    <section id="features" class="py-24 bg-white relative">
+        <div class="max-w-7xl mx-auto px-6 text-center">
+            <p class="reveal reveal-up text-warm-orange font-medium tracking-widest text-sm mb-3">CORE FEATURES</p>
+            <h2 class="reveal reveal-up delay-100 font-display text-deep-brown text-4xl md:text-5xl font-bold leading-tight mb-16">
+                为无障碍创作<br>重新定义交互
+            </h2>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="reveal reveal-up delay-100 bg-cream rounded-2xl p-8 breathing-glow cursor-pointer group ripple-btn transition-all duration-500 hover:scale-[1.03] hover:border-warm-orange/50 border-2 border-transparent">
+                    <div class="w-14 h-14 rounded-full bg-warm-orange/10 flex items-center justify-center mx-auto mb-5 transition-transform duration-500 group-hover:rotate-[360deg]">
+                        <i class="fas fa-microphone-lines text-warm-orange text-xl"></i>
+                    </div>
+                    <h3 class="font-display text-deep-brown text-lg font-bold mb-3 transition-colors duration-300 group-hover:text-warm-orange">纯语音操控</h3>
+                    <p class="text-body-text/60 text-sm leading-relaxed">彻底抛弃鼠标键盘，从起笔到成画，全程只需开口指令。</p>
+                </div>
+                <div class="reveal reveal-up delay-200 bg-cream rounded-2xl p-8 breathing-glow cursor-pointer group ripple-btn transition-all duration-500 hover:scale-[1.03] hover:border-warm-orange/50 border-2 border-transparent">
+                    <div class="w-14 h-14 rounded-full bg-warm-orange/10 flex items-center justify-center mx-auto mb-5 transition-transform duration-500 group-hover:rotate-[360deg]">
+                        <i class="fas fa-map-location-dot text-warm-orange text-xl"></i>
+                    </div>
+                    <h3 class="font-display text-deep-brown text-lg font-bold mb-3 transition-colors duration-300 group-hover:text-warm-orange">语义空间定位</h3>
+                    <p class="text-body-text/60 text-sm leading-relaxed">无需报坐标，说"左上角"、"中间偏右"，AI自动映射画布。</p>
+                </div>
+                <div class="reveal reveal-up delay-300 bg-cream rounded-2xl p-8 breathing-glow cursor-pointer group ripple-btn transition-all duration-500 hover:scale-[1.03] hover:border-warm-orange/50 border-2 border-transparent">
+                    <div class="w-14 h-14 rounded-full bg-warm-orange/10 flex items-center justify-center mx-auto mb-5 transition-transform duration-500 group-hover:rotate-[360deg]">
+                        <i class="fas fa-comment-dots text-warm-orange text-xl"></i>
+                    </div>
+                    <h3 class="font-display text-deep-brown text-lg font-bold mb-3 transition-colors duration-300 group-hover:text-warm-orange">视障听觉闭环</h3>
+                    <p class="text-body-text/60 text-sm leading-relaxed">画笔落处必有回声。AI实时语音播报画面内容，心中有数。</p>
+                </div>
+                <div class="reveal reveal-up delay-400 bg-cream rounded-2xl p-8 breathing-glow cursor-pointer group ripple-btn transition-all duration-500 hover:scale-[1.03] hover:border-warm-orange/50 border-2 border-transparent">
+                    <div class="w-14 h-14 rounded-full bg-warm-orange/10 flex items-center justify-center mx-auto mb-5 transition-transform duration-500 group-hover:rotate-[360deg]">
+                        <i class="fas fa-wand-magic-sparkles text-warm-orange text-xl"></i>
+                    </div>
+                    <h3 class="font-display text-deep-brown text-lg font-bold mb-3 transition-colors duration-300 group-hover:text-warm-orange">模糊意图解析</h3>
+                    <p class="text-body-text/60 text-sm leading-relaxed">说"画个像天空一样的圆"，大模型精准理解并执行。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== 技术架构与数据模块 ====== -->
+    <section id="tech" class="relative py-24 overflow-hidden">
+        <div class="absolute inset-0">
+            <img src="https://images.unsplash.com/photo-1550745165-9bc0b252726f?w=1920&q=80" alt="科技背景" class="w-full h-full object-cover">
+            <div class="absolute inset-0 bg-deep-brown/85"></div>
+        </div>
+        <div class="relative z-10 max-w-7xl mx-auto px-6">
+            <div class="grid lg:grid-cols-2 gap-16 items-center">
+                <div>
+                    <p class="reveal reveal-up text-warm-orange font-medium tracking-widest text-sm mb-3">TECH ARCHITECTURE</p>
+                    <h2 class="reveal reveal-up delay-100 font-display text-white text-4xl md:text-5xl font-bold leading-tight mb-4">
+                        双通道引擎<br>响应零延迟
+                    </h2>
+                    <div class="reveal reveal-up delay-200 w-16 h-1 bg-warm-orange rounded-full mb-6"></div>
+                    <p class="reveal reveal-up delay-300 text-light-brown/80 leading-relaxed">
+                        为了兼顾复杂语义的理解力与绘图操作的即时性，我们首创了"快慢双通道"架构。慢通道由通义千问处理复杂意图，快通道由前端本地拦截撤销/清空指令。</p>
+                </div>
+                <div class="flex flex-wrap gap-8 justify-center lg:justify-end">
+                    <div class="reveal reveal-scale delay-200 w-44 h-44 rounded-full bg-light-brown/20 backdrop-blur-sm border border-light-brown/30 flex flex-col items-center justify-center cursor-pointer group transition-all duration-500 hover:scale-110 hover:bg-light-brown/30 relative overflow-hidden">
+                        <div class="absolute inset-0 flow-border opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-full" style="-webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; padding: 2px;"></div>
+                        <span class="counter-value font-display text-white text-4xl font-bold" data-target="100">0</span>
+                        <span class="text-warm-orange text-xs font-medium tracking-wider mt-1">% 语音操控</span>
+                    </div>
+                    <div class="reveal reveal-scale delay-400 w-44 h-44 rounded-full bg-light-brown/20 backdrop-blur-sm border border-light-brown/30 flex flex-col items-center justify-center cursor-pointer group transition-all duration-500 hover:scale-110 hover:bg-light-brown/30 relative overflow-hidden">
+                        <div class="absolute inset-0 flow-border opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-full" style="-webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; padding: 2px;"></div>
+                        <span class="counter-value font-display text-white text-4xl font-bold" data-target="50">0</span>
+                        <span class="text-warm-orange text-xs font-medium tracking-wider mt-1">ms 极速响应</span>
+                    </div>
+                    <div class="reveal reveal-scale delay-600 w-44 h-44 rounded-full bg-light-brown/20 backdrop-blur-sm border border-light-brown/30 flex flex-col items-center justify-center cursor-pointer group transition-all duration-500 hover:scale-110 hover:bg-light-brown/30 relative overflow-hidden">
+                        <div class="absolute inset-0 flow-border opacity-0 group-hover:opacity-100 transition-opacity duration-500 rounded-full" style="-webkit-mask: linear-gradient(#fff 0 0) content-box, linear-gradient(#fff 0 0); -webkit-mask-composite: xor; mask-composite: exclude; padding: 2px;"></div>
+                        <span class="counter-value font-display text-white text-4xl font-bold" data-target="360">0</span>
+                        <span class="text-warm-orange text-xs font-medium tracking-wider mt-1">° 听觉闭环</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== 交互Demo区 ====== -->
+    <section id="demo" class="py-24 bg-cream relative">
+        <div class="max-w-4xl mx-auto px-6 text-center">
+            <p class="reveal reveal-up text-warm-orange font-medium tracking-widest text-sm mb-3">INTERACTIVE DEMO</p>
+            <h2 class="reveal reveal-up delay-100 font-display text-deep-brown text-4xl md:text-5xl font-bold leading-tight mb-6">
+                开口即画，亲耳听见
+            </h2>
+            <p class="reveal reveal-up delay-200 text-body-text/70 leading-relaxed mb-12">
+                点击麦克风，允许浏览器使用语音权限。试试说："画一个红色的圆"或"清空画布"。
+            </p>
+
+            <div class="reveal reveal-scale delay-300 bg-white rounded-2xl p-8 shadow-xl border border-light-brown/50 relative">
+                <div class="w-full h-80 bg-cool-slate rounded-xl mb-8 flex items-center justify-center text-gray-300 border-2 border-dashed border-gray-200 relative overflow-hidden" id="demoCanvas" style="background-color: #F8F5F1;">
+                    <div id="demoObjects" class="absolute inset-0"></div>
+                    <span class="relative z-0 pointer-events-none" id="demoPlaceholder">Canvas 绘制区域</span>
+                </div>
+                <button id="demoMicBtn" class="w-20 h-20 rounded-full bg-warm-orange text-white hover:bg-deep-brown transition-all hover:scale-110 focus:outline-none focus:ring-4 focus:ring-warm-orange/50 relative ripple-btn">
+                    <i class="fas fa-microphone text-3xl"></i>
+                    <div class="absolute inset-0 rounded-full border-2 border-warm-orange animate-ping opacity-20" style="display:none;" id="micPing"></div>
+                </button>
+                <p class="mt-4 text-sm text-gray-500" id="demoStatus">点击麦克风开始说话</p>
+                <p class="mt-2 text-xs text-deep-brown font-medium" id="demoTranscript"></p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== 底部 ====== -->
+    <footer class="bg-deep-brown text-light-brown py-12 relative z-10">
+        <div class="max-w-7xl mx-auto px-6 text-center">
+            <div class="flex justify-center items-center gap-2 mb-4">
+                <div class="w-8 h-8 rounded-full bg-warm-orange flex items-center justify-center">
+                    <i class="fas fa-palette text-white text-sm"></i>
+                </div>
+                <span class="font-display text-white font-bold text-lg">VoiceCanvas</span>
+            </div>
+            <p class="text-light-brown/60 text-sm mb-6 max-w-md mx-auto">
+                这是一个开源的无障碍辅助技术项目，旨在用 AI 降低创作门槛，让艺术属于每一个人。
+            </p>
+            <div class="flex justify-center gap-6 mb-8">
+                <a href="https://github.com/HanDon001/drawing-tablet" class="text-light-brown/60 hover:text-warm-amber transition-colors text-sm">GitHub</a>
+                <a href="#" class="text-light-brown/60 hover:text-warm-amber transition-colors text-sm">产品文档</a>
+                <a href="#" class="text-light-brown/60 hover:text-warm-amber transition-colors text-sm">技术架构</a>
+                <a href="#" class="text-light-brown/60 hover:text-warm-amber transition-colors text-sm">无障碍倡议</a>
+            </div>
+            <div class="border-t border-light-brown/10 pt-6">
+                <p class="text-light-brown/40 text-xs">© 2024 VoiceCanvas. Built with Love & AI.</p>
+            </div>
+        </div>
+    </footer>
+
+    <script>
+        // --- 1. 滚动显现逻辑 ---
+        const revealElements = document.querySelectorAll('.reveal');
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) { entry.target.classList.add('revealed'); }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+        revealElements.forEach(el => revealObserver.observe(el));
+
+        // --- 2. 导航栏滚动变色 ---
+        const mainNav = document.getElementById('mainNav');
+        window.addEventListener('scroll', () => {
+            mainNav.classList.toggle('scrolled', window.scrollY > 100);
+        });
+
+        // --- 3. 轮播图逻辑 ---
+        let currentSlide = 0;
+        const slides = document.querySelectorAll('.carousel-slide');
+        const dots = document.querySelectorAll('.carousel-dot');
+        const autoSlideInterval = setInterval(nextSlide, 5000);
+
+        function updateCarousel() {
+            slides.forEach((s, i) => s.className = `carousel-slide ${i === currentSlide ? 'active' : 'inactive'} absolute inset-0`);
+            dots.forEach((d, i) => d.classList.toggle('active', i === currentSlide));
+            dots.forEach(d => d.style.backgroundColor = d.classList.contains('active') ? 'white' : 'rgba(255,255,255,0.5)');
+        }
+        function nextSlide() { currentSlide = (currentSlide + 1) % slides.length; updateCarousel(); }
+        function prevSlide() { currentSlide = (currentSlide - 1 + slides.length) % slides.length; updateCarousel(); }
+        function goToSlide(index) { currentSlide = index; updateCarousel(); clearInterval(autoSlideInterval); }
+
+        // --- 4. 数字递增动画 ---
+        const counters = document.querySelectorAll('.counter-value');
+        const counterObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    const target = +entry.target.getAttribute('data-target');
+                    const increment = target / 60;
+                    let current = 0;
+                    const updateCounter = () => {
+                        current += increment;
+                        if (current < target) { entry.target.innerText = Math.ceil(current); requestAnimationFrame(updateCounter); }
+                        else { entry.target.innerText = target; }
+                    };
+                    updateCounter();
+                    counterObserver.unobserve(entry.target);
+                }
+            });
+        }, { threshold: 0.5 });
+        counters.forEach(c => counterObserver.observe(c));
+
+        // --- 5. 按钮波纹 ---
+        document.querySelectorAll('.ripple-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                const rect = btn.getBoundingClientRect();
+                const ripple = document.createElement('span');
+                ripple.className = 'ripple-effect';
+                ripple.style.left = `${e.clientX - rect.left}px`;
+                ripple.style.top = `${e.clientY - rect.top}px`;
+                btn.appendChild(ripple);
+                setTimeout(() => ripple.remove(), 600);
+            });
+        });
+
+        // --- 6. 粒子背景 (极简版) ---
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resizeCanvas); resizeCanvas();
+        class Particle {
+            constructor() { this.reset(); }
+            reset() { this.x = Math.random() * canvas.width; this.y = Math.random() * canvas.height; this.size = Math.random() * 2 + 0.5; this.speedX = (Math.random() - 0.5) * 0.5; this.speedY = (Math.random() - 0.5) * 0.5; this.opacity = Math.random() * 0.5 + 0.2; }
+            update() { this.x += this.speedX; this.y += this.speedY; if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) this.reset(); }
+            draw() { ctx.fillStyle = `rgba(155, 106, 58, ${this.opacity})`; ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill(); }
+        }
+        for (let i = 0; i < 50; i++) particles.push(new Particle());
+        function animateParticles() { ctx.clearRect(0, 0, canvas.width, canvas.height); particles.forEach(p => { p.update(); p.draw(); }); requestAnimationFrame(animateParticles); }
+        animateParticles();
+
+        // --- 7. 简易Demo逻辑 (带简单渲染) ---
+        const demoMicBtn = document.getElementById('demoMicBtn');
+        const demoStatus = document.getElementById('demoStatus');
+        const demoCanvasDiv = document.getElementById('demoCanvas');
+        const demoObjectsDiv = document.getElementById('demoObjects');
+        const demoTranscript = document.getElementById('demoTranscript');
+        const micPing = document.getElementById('micPing');
+        const placeholder = document.getElementById('demoPlaceholder');
+        let isListeningDemo = false;
+        let recognition = null;
+        let shapes = [];
+
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.lang = 'zh-CN';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = () => {
+                isListeningDemo = true;
+                demoStatus.innerText = "聆听中...";
+                micPing.style.display = "block";
+                demoMicBtn.classList.add('bg-red-500');
+                demoMicBtn.classList.remove('bg-warm-orange');
+            };
+
+            recognition.onresult = (event) => {
+                const text = event.results[0][0].transcript;
+                demoTranscript.innerText = `识别到：${text}`;
+
+                // 极简本地解析
+                let color = 'black';
+                if (text.includes('红')) color = '#EF4444';
+                else if (text.includes('蓝')) color = '#3B82F6';
+                else if (text.includes('绿')) color = '#10B981';
+                else if (text.includes('黄')) color = '#F59E0B';
+
+                if (text.includes('圆')) {
+                    shapes.push(`<div style="position:absolute; top:${Math.random()*70+10}%; left:${Math.random()*70+10}%; width:60px; height:60px; background-color:${color}; border-radius:50%; opacity:0.8;"></div>`);
+                } else if (text.includes('方') || text.includes('块')) {
+                    shapes.push(`<div style="position:absolute; top:${Math.random()*70+10}%; left:${Math.random()*70+10}%; width:60px; height:60px; background-color:${color}; opacity:0.8;"></div>`);
+                } else if (text.includes('三角')) {
+                    shapes.push(`<div style="position:absolute; top:${Math.random()*70+10}%; left:${Math.random()*70+10}%; width:0; height:0; border-left: 30px solid transparent; border-right: 30px solid transparent; border-bottom: 60px solid ${color}; opacity:0.8;"></div>`);
+                } else if (text.includes('清空') || text.includes('重置')) {
+                    shapes = [];
+                }
+
+                placeholder.style.display = shapes.length > 0 ? 'none' : 'block';
+                demoObjectsDiv.innerHTML = shapes.join('');
+            };
+
+            recognition.onend = () => {
+                isListeningDemo = false;
+                demoStatus.innerText = "点击麦克风开始说话";
+                micPing.style.display = "none";
+                demoMicBtn.classList.remove('bg-red-500');
+                demoMicBtn.classList.add('bg-warm-orange');
+            };
+            recognition.onerror = () => recognition.onend();
+
+            demoMicBtn.addEventListener('click', () => {
+                if (!isListeningDemo) recognition.start();
+                else recognition.stop();
+            });
+        } else {
+            demoMicBtn.disabled = true;
+            demoStatus.innerText = "您的浏览器不支持语音识别，请使用Chrome";
+        }
+    </script>
+</body>
+</html>
