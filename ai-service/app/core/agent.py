@@ -15,14 +15,8 @@ from app.skills.draw.skill import DrawSkill
 from app.skills.query.skill import QuerySkill
 
 
-# 全局系统提示词
-SYSTEM_PROMPT = """你是 VoiceCanvas 的智能语音助手"小画"，专为残障人士服务。
-
-【全局规则】
-1. 你的回复将被 TTS 播报，严禁使用 Markdown 格式，保持简短口语化。
-2. 每次执行动作后，必须用自然语言确认结果。
-3. 当用户说"它"、"刚才那个"时，需结合上下文解析。
-4. 若遇到危险或不当请求，温和拒绝。"""
+# 全局系统提示词（精简，减少 token）
+SYSTEM_PROMPT = """语音助手"小画"。回复口语化、<20字、无Markdown。"""
 
 
 class Agent:
@@ -111,14 +105,23 @@ class Agent:
             skill_tool_names = [t.__name__ for t in skill.get_tools()]
             openai_tools = ToolRegistry.get_openai_tools(skill_tool_names)
 
-            # 4. 调用 LLM
-            logger.info(f"调用 LLM，工具列表: {skill_tool_names}")
-            response = await self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                tools=openai_tools if openai_tools else None,
-                tool_choice="auto" if openai_tools else None,
-            )
+            # 4. 调用 LLM（8秒超时）
+            import asyncio as _asyncio
+            logger.info(f"调用 LLM({self.model})，工具列表: {skill_tool_names}")
+
+            try:
+                response = await _asyncio.wait_for(
+                    self.client.chat.completions.create(
+                        model=self.model,
+                        messages=messages,
+                        tools=openai_tools if openai_tools else None,
+                        tool_choice="auto" if openai_tools else None,
+                    ),
+                    timeout=8.0,
+                )
+            except _asyncio.TimeoutError:
+                logger.warning(f"LLM({self.model}) 超时，降级到本地解析")
+                return self._local_fallback(text)
 
             message = response.choices[0].message
             actions = []
