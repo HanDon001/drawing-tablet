@@ -16,10 +16,13 @@ const apiClient: AxiosInstance = axios.create({
   }
 })
 
-// 请求拦截器
+// 请求拦截器（添加全链路追踪ID）
 apiClient.interceptors.request.use(
   (request) => {
-    logger.debug('API 请求:', request.method?.toUpperCase(), request.url)
+    // 生成请求ID
+    const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+    request.headers['X-Request-ID'] = requestId
+    logger.debug(`[${requestId}] API 请求: ${request.method?.toUpperCase()} ${request.url}`)
     return request
   },
   (error) => {

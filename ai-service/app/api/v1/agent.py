@@ -4,7 +4,7 @@ Agent API 路由
 """
 
 from typing import Optional, List, Dict, Any
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 from loguru import logger
 
@@ -35,17 +35,22 @@ class InterpretResponse(BaseModel):
 
 
 @router.post("/interpret", response_model=InterpretResponse)
-async def interpret(request: InterpretRequest):
+async def interpret(request: InterpretRequest, http_request: Request):
     """
     处理用户语音指令
 
     Args:
         request: 包含用户文本和画布上下文
+        http_request: HTTP请求对象（用于获取请求ID）
 
     Returns:
         InterpretResponse: AI回复和待执行动作
     """
-    logger.info(f"收到指令: text='{request.text}', canvas_context='{request.canvas_context}'")
+    # 获取请求ID
+    request_id = http_request.headers.get("X-Request-ID", "unknown")
+
+    logger.info(f"[{request_id}] 收到指令: text='{request.text}'")
+    logger.info(f"[{request_id}] 画布上下文: {request.canvas_context}")
 
     try:
         # 调用 Agent 处理
@@ -60,11 +65,11 @@ async def interpret(request: InterpretRequest):
             actions=[Action(**action) for action in result["actions"]]
         )
 
-        logger.info(f"返回响应: reply='{response.reply}', actions_count={len(response.actions)}")
+        logger.info(f"[{request_id}] 返回响应: reply='{response.reply}', actions_count={len(response.actions)}")
         return response
 
     except Exception as e:
-        logger.error(f"处理指令时出错: {str(e)}")
+        logger.error(f"[{request_id}] 处理指令时出错: {str(e)}")
         raise HTTPException(
             status_code=500,
             detail="处理指令时出错，请稍后重试"

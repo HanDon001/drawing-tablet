@@ -47,6 +47,16 @@ const statusText = ref('')
 // Canvas 引擎实例
 let engine: CanvasEngine | null = null
 
+// 防抖定时器
+let saveDebounceTimer: ReturnType<typeof setTimeout> | null = null
+
+/**
+ * 生成请求ID（全链路追踪）
+ */
+function generateRequestId(): string {
+  return `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`
+}
+
 /**
  * 初始化 Canvas
  */
@@ -111,25 +121,82 @@ async function handleFastCommand(command: string): Promise<boolean> {
 }
 
 /**
+ * 构建画布上下文描述（视障查询优化）
+ * 生成包含空间方位的自然语言描述
+ */
+function buildCanvasContext(): string {
+  const objects = canvasStore.objects
+
+  if (objects.length === 0) {
+    return '画布为空，没有任何图形'
+  }
+
+  // 位置映射（用于空间描述）
+  const positionNames: Record<string, string> = {
+    'center': '中间',
+    'left_top': '左上角',
+    'right_top': '右上角',
+    'left_bottom': '左下角',
+    'right_bottom': '右下角'
+  }
+
+  // 形状名称映射
+  const shapeNames: Record<string, string> = {
+    'circle': '圆',
+    'rectangle': '方块',
+    'triangle': '三角形',
+    'line': '线'
+  }
+
+  // 大小名称映射
+  const sizeNames: Record<string, string> = {
+    'small': '小',
+    'medium': '',
+    'large': '大'
+  }
+
+  const descriptions = objects.map(obj => {
+    const posName = positionNames[obj.position] || obj.position
+    const shapeName = shapeNames[obj.shape] || obj.shape
+    const sizeName = sizeNames[obj.size] || ''
+    const tagInfo = obj.tag ? `，叫做"${obj.tag}"` : ''
+
+    return `画布${posName}有一个${obj.color}${sizeName}${shapeName}${tagInfo}`
+  })
+
+  return descriptions.join('；')
+}
+
+/**
  * 处理慢通道指令（调用 AI）
  */
 async function handleSlowCommand(text: string): Promise<void> {
+  const requestId = generateRequestId()
   isLoading.value = true
   statusText.value = '正在理解指令...'
 
+  logger.info(`[${requestId}] 开始处理指令: ${text}`)
+
   try {
     // 构建画布上下文描述
-    const canvasContext = canvasStore.objects.length > 0
-      ? canvasStore.objects.map(obj =>
-          `画布上有一个${obj.color}${obj.size === 'small' ? '小' : obj.size === 'large' ? '大' : ''}${obj.shape === 'circle' ? '圆' : obj.shape === 'rectangle' ? '方块' : '三角形'}${obj.tag ? `(标签:${obj.tag})` : ''}`
-        ).join('；')
-      : '画布为空'
+    const canvasContext = buildCanvasContext()
 
-    // 调用 AI 接口
-    const response = await interpret({
-      text,
-      canvas_context: canvasContext
+    logger.info(`[${requestId}] 画布上下文: ${canvasContext}`)
+
+    // 调用 AI 接口（带超时）
+    const timeoutPromise = new Promise<never>((_, reject) => {
+      setTimeout(() => reject(new Error('请求超时')), 10000)
     })
+
+    const response = await Promise.race([
+      interpret({
+        text,
+        canvas_context: canvasContext
+      }),
+      timeoutPromise
+    ])
+
+    logger.info(`[${requestId}] AI 响应:`, response)
 
     // 执行动作
     if (response.actions && response.actions.length > 0) {
@@ -162,7 +229,7 @@ async function handleSlowCommand(text: string): Promise<void> {
           }
 
           default:
-            logger.warn('未知工具:', action.tool)
+            logger.warn(`[${requestId}] 未知工具: ${action.tool}`)
         }
       }
       renderCanvas()
@@ -174,11 +241,19 @@ async function handleSlowCommand(text: string): Promise<void> {
     }
 
     statusText.value = ''
+    logger.info(`[${requestId}] 指令处理完成`)
 
-  } catch (error) {
-    logger.error('处理指令失败:', error)
+  } catch (error: any) {
+    const errorMsg = error?.message || '未知错误'
+    logger.error(`[${requestId}] 处理指令失败: ${errorMsg}`)
     statusText.value = ''
-    await speak('抱歉，处理指令时出错了，请稍后重试')
+
+    // 友好的错误提示
+    if (errorMsg.includes('超时')) {
+      await speak('网络开小差了，请稍后再试')
+    } else {
+      await speak('抱歉，处理指令时出错了')
+    }
   } finally {
     isLoading.value = false
   }
@@ -205,12 +280,20 @@ watch(transcript, async (newText) => {
   await handleSlowCommand(newText)
 })
 
-// 监听对象变化，自动保存
+// 监听对象变化，防抖自动保存
 watch(
   () => canvasStore.objects,
   () => {
     renderCanvas()
-    canvasStore.saveToLocal()
+
+    // 防抖保存（2秒）
+    if (saveDebounceTimer) {
+      clearTimeout(saveDebounceTimer)
+    }
+    saveDebounceTimer = setTimeout(() => {
+      canvasStore.saveToLocal()
+      logger.debug('画布已自动保存')
+    }, 2000)
   },
   { deep: true }
 )
