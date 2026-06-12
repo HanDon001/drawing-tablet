@@ -156,23 +156,11 @@
             if (!micBtn) return;
 
             micBtn.addEventListener('click', async () => {
-                // 麦克风按钮 = AI 陪伴模式
-                if (window.agentRunning) {
-                    VC.AgentLoop.stop();
-                    window.agentRunning = false;
-                    const btn = document.getElementById('agentToggleBtn');
-                    if (btn) {
-                        btn.innerHTML = '<i class="fas fa-robot mr-1"></i>启动 AI 陪伴模式';
-                        btn.className = 'w-full py-2.5 rounded-lg bg-gradient-to-r from-purple-600 to-pink-500 text-white text-[11px] font-semibold hover:opacity-90 transition-all shadow-md';
-                    }
-                } else {
-                    VC.AgentLoop.start();
-                    window.agentRunning = true;
-                    const btn = document.getElementById('agentToggleBtn');
-                    if (btn) {
-                        btn.innerHTML = '<i class="fas fa-stop mr-1"></i>停止 AI 陪伴';
-                        btn.className = 'w-full py-2.5 rounded-lg bg-gradient-to-r from-red-500 to-red-600 text-white text-[11px] font-semibold hover:opacity-90 transition-all shadow-md';
-                    }
+                // 麦克风 = 一次性语音指令（按一次说一句）
+                if (VC.State.voiceState === 'recording') {
+                    VC.Voice.stopRecording();
+                } else if (VC.State.voiceState === 'idle') {
+                    await VC.Voice.startRecording();
                 }
             });
         },
