@@ -230,14 +230,11 @@
             </div>
 
             <!-- 底部快捷操作 -->
-            <div class="p-3 border-t border-light-brown bg-cream/20 space-y-2">
+            <div class="p-3 border-t border-light-brown bg-cream/20">
                 <div class="flex gap-2">
                     <button onclick="VC.Cmd.undo()" class="flex-1 py-2 rounded-lg bg-white border border-light-brown text-mid-brown text-[10px] font-medium hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"><i class="fas fa-undo mr-1"></i>Undo</button>
                     <button onclick="VC.Cmd.clearAll()" class="flex-1 py-2 rounded-lg bg-white border border-light-brown text-mid-brown text-[10px] font-medium hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"><i class="fas fa-trash-alt mr-1"></i>Clear</button>
                 </div>
-                <button id="aiDemoBtn" onclick="VC.Agent.demonstrate()" class="w-full py-2 rounded-lg bg-purple-500 text-white text-[10px] font-medium hover:bg-purple-600 transition-all">
-                    <i class="fas fa-robot mr-1"></i>AI 创作演示
-                </button>
             </div>
         </aside>
 
@@ -260,24 +257,60 @@
             </div>
         </div>
 
-        <!-- 右侧：AI 对话聊天窗口 -->
+        <!-- 右侧：AI 助手面板 -->
         <aside class="w-72 bg-white border-l border-light-brown flex flex-col flex-shrink-0">
-            <div class="p-3 border-b border-light-brown/50 bg-cream/30 flex items-center justify-between">
-                <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase"><i class="fas fa-robot mr-1"></i>小画助手</h3>
-                <button onclick="toggleLogPanel()" class="text-[10px] text-mid-brown/50 hover:text-mid-brown transition-colors" title="日志">
-                    <i class="fas fa-list-ul"></i> 日志
-                </button>
-            </div>
-            <div class="flex-1 overflow-y-auto p-3 space-y-3 text-[11px]" id="chatContainer">
-                <div class="text-center text-[10px] text-mid-brown/40 my-4">说出你想画的内容吧 🎨</div>
-            </div>
-            <!-- 输入框 -->
-            <div class="p-2 border-t border-light-brown/50 bg-cream/20">
-                <div class="flex gap-1.5">
-                    <input id="chatInput" type="text" placeholder="输入指令..." class="flex-1 px-3 py-2 text-[11px] bg-white border border-light-brown rounded-lg outline-none focus:border-mid-brown transition-colors" onkeydown="if(event.key==='Enter')sendChatMessage()">
-                    <button onclick="sendChatMessage()" class="px-3 py-2 bg-warm-orange text-white rounded-lg text-[11px] hover:bg-mid-brown transition-colors">
-                        <i class="fas fa-paper-plane"></i>
+
+            <!-- AI 功能区 -->
+            <div class="p-3 border-b border-light-brown/50 space-y-2">
+                <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase mb-2"><i class="fas fa-wand-magic-sparkles mr-1"></i>AI 功能</h3>
+                <div class="grid grid-cols-2 gap-1.5">
+                    <button onclick="VC.Agent.demonstrate()" class="py-2 px-2 rounded-lg bg-gradient-to-r from-purple-500 to-pink-500 text-white text-[10px] font-medium hover:opacity-90 transition-all">
+                        <i class="fas fa-palette mr-1"></i>多模态绘画
                     </button>
+                    <button onclick="VC.Agent.themeCreate('自然风光')" class="py-2 px-2 rounded-lg bg-gradient-to-r from-green-500 to-teal-500 text-white text-[10px] font-medium hover:opacity-90 transition-all">
+                        <i class="fas fa-leaf mr-1"></i>主题创作
+                    </button>
+                    <button onclick="sendQuickCmd('描述一下画布上的内容')" class="py-2 px-2 rounded-lg bg-gradient-to-r from-blue-500 to-cyan-500 text-white text-[10px] font-medium hover:opacity-90 transition-all">
+                        <i class="fas fa-eye mr-1"></i>画面描述
+                    </button>
+                    <button onclick="sendQuickCmd('帮我优化一下画布布局')" class="py-2 px-2 rounded-lg bg-gradient-to-r from-orange-400 to-yellow-400 text-white text-[10px] font-medium hover:opacity-90 transition-all">
+                        <i class="fas fa-magic mr-1"></i>智能优化
+                    </button>
+                </div>
+            </div>
+
+            <!-- 快捷指令 -->
+            <div class="p-3 border-b border-light-brown/50">
+                <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase mb-2"><i class="fas fa-bolt mr-1"></i>快捷指令</h3>
+                <div class="flex flex-wrap gap-1.5">
+                    <button onclick="sendQuickCmd('画一个红色的圆')" class="px-2.5 py-1 rounded-full bg-light-brown/40 text-mid-brown text-[10px] hover:bg-warm-orange hover:text-white transition-all">🔴 红圆</button>
+                    <button onclick="sendQuickCmd('画一个蓝色的方块')" class="px-2.5 py-1 rounded-full bg-light-brown/40 text-mid-brown text-[10px] hover:bg-blue-500 hover:text-white transition-all">🟦 蓝方</button>
+                    <button onclick="sendQuickCmd('画一个绿色的三角形')" class="px-2.5 py-1 rounded-full bg-light-brown/40 text-mid-brown text-[10px] hover:bg-green-500 hover:text-white transition-all">🔺 绿三角</button>
+                    <button onclick="sendQuickCmd('画一个黄色的星星')" class="px-2.5 py-1 rounded-full bg-light-brown/40 text-mid-brown text-[10px] hover:bg-yellow-500 hover:text-white transition-all">⭐ 黄星</button>
+                    <button onclick="VC.Cmd.undo()" class="px-2.5 py-1 rounded-full bg-light-brown/40 text-mid-brown text-[10px] hover:bg-red-400 hover:text-white transition-all">↩ 撤销</button>
+                    <button onclick="VC.Cmd.clearAll()" class="px-2.5 py-1 rounded-full bg-light-brown/40 text-mid-brown text-[10px] hover:bg-red-500 hover:text-white transition-all">🗑 清空</button>
+                </div>
+            </div>
+
+            <!-- 聊天区域 -->
+            <div class="flex-1 flex flex-col min-h-0">
+                <div class="p-2 border-b border-light-brown/50 flex items-center justify-between">
+                    <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase"><i class="fas fa-comments mr-1"></i>对话</h3>
+                    <button onclick="toggleLogPanel()" class="text-[10px] text-mid-brown/50 hover:text-mid-brown transition-colors" title="日志">
+                        <i class="fas fa-list-ul"></i> 日志
+                    </button>
+                </div>
+                <div class="flex-1 overflow-y-auto p-3 space-y-3 text-[11px]" id="chatContainer">
+                    <div class="text-center text-[10px] text-mid-brown/40 my-4">说出你想画的内容吧 🎨</div>
+                </div>
+                <!-- 输入框 -->
+                <div class="p-2 border-t border-light-brown/50 bg-cream/20">
+                    <div class="flex gap-1.5">
+                        <input id="chatInput" type="text" placeholder="输入指令..." class="flex-1 px-3 py-2 text-[11px] bg-white border border-light-brown rounded-lg outline-none focus:border-mid-brown transition-colors" onkeydown="if(event.key==='Enter')sendChatMessage()">
+                        <button onclick="sendChatMessage()" class="px-3 py-2 bg-warm-orange text-white rounded-lg text-[11px] hover:bg-mid-brown transition-colors">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                    </div>
                 </div>
             </div>
         </aside>
@@ -345,8 +378,12 @@
 
             input.value = '';
             addChatMessage('user', text);
+            VC.Cmd.processText(text);
+        }
 
-            // 走命令处理（和语音一样的流程）
+        // 快捷指令（按钮点击）
+        function sendQuickCmd(text) {
+            addChatMessage('user', text);
             VC.Cmd.processText(text);
         }
 
