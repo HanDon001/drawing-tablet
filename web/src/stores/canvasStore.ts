@@ -20,6 +20,8 @@ export interface CanvasObject {
   position: string
   /** 标签，用于指代 */
   tag?: string
+  /** 透明度 (0-1) */
+  opacity?: number
   /** x坐标 */
   x: number
   /** y坐标 */
