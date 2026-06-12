@@ -11,6 +11,10 @@ from loguru import logger
 from .core.config import settings
 from .api.v1.agent import router as agent_router
 
+# 导入 Skills 模块，确保工具被注册到 ToolRegistry
+from .skills.draw import tools as draw_tools
+from .skills.query import tools as query_tools
+
 
 # 生命周期管理
 @asynccontextmanager

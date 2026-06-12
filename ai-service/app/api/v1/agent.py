@@ -8,6 +8,8 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from loguru import logger
 
+from core.agent import agent_instance
+
 router = APIRouter(prefix="/ai/v1", tags=["agent"])
 
 
@@ -46,14 +48,19 @@ async def interpret(request: InterpretRequest):
     logger.info(f"收到指令: text='{request.text}', canvas_context='{request.canvas_context}'")
 
     try:
-        # TODO: Phase 1 实现 Agent 调度逻辑
-        # 当前返回占位响应，用于验证接口连通性
-        response = InterpretResponse(
-            reply=f"收到指令：{request.text}",
-            actions=[]
+        # 调用 Agent 处理
+        result = await agent_instance.chat(
+            text=request.text,
+            canvas_context=request.canvas_context
         )
 
-        logger.info(f"返回响应: reply='{response.reply}', actions={response.actions}")
+        # 构建响应
+        response = InterpretResponse(
+            reply=result["reply"],
+            actions=[Action(**action) for action in result["actions"]]
+        )
+
+        logger.info(f"返回响应: reply='{response.reply}', actions_count={len(response.actions)}")
         return response
 
     except Exception as e:
