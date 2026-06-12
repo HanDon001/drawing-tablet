@@ -1,166 +1,336 @@
 /**
- * 语音服务组合式函数
- * 封装 ASR (语音识别) 和 TTS (语音合成)
+ * 实时流式语音识别组合式函数
+ *
+ * 流程:
+ * AudioContext(16kHz) → AudioWorklet(400ms PCM) → WebSocket → DashScope ASR Realtime
+ *   ↓
+ * 增量结果 → 2500ms 防抖 → 分块策略 → ADD_TEMP
+ * 最终结果 → 立即 MARK_FINAL → 800ms 冷却 → contextHistory
  */
 
 import { ref, onUnmounted } from 'vue'
-import { config } from '@/config'
+import { textToSpeech } from '@/api'
 import { logger } from '@/utils/logger'
 
-// ASR 状态
 export type AsrState = 'idle' | 'listening' | 'processing'
 
-/**
- * 语音服务组合式函数
- */
 export function useVoice() {
-  // ASR 状态
   const asrState = ref<AsrState>('idle')
   const transcript = ref('')
 
-  // Speech Recognition 实例
-  let recognition: any = null
+  // 音频捕获
+  let audioCtx: AudioContext | null = null
+  let workletNode: AudioWorkletNode | null = null
+  let mediaStream: MediaStream | null = null
 
-  /**
-   * 初始化 ASR
-   */
-  function initASR(): boolean {
-    // 检查浏览器支持
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  // WebSocket
+  let ws: WebSocket | null = null
 
-    if (!SpeechRecognition) {
-      logger.error('浏览器不支持 Speech Recognition API')
-      return false
-    }
+  // 防抖 & 分块
+  let debounceTimer: ReturnType<typeof setTimeout> | null = null
+  let lastPartialText = ''
+  let contextHistory: string[] = [] // 最近 2 句最终结果
+  let cooldownTimer: ReturnType<typeof setTimeout> | null = null
+  let isCoolingDown = false
 
-    recognition = new SpeechRecognition()
-    recognition.lang = config.asrLanguage
-    recognition.continuous = false
-    recognition.interimResults = false
+  const DEBOUNCE_MS = 2500
+  const COOLDOWN_MS = 800
+  const MAX_CONTEXT = 2
 
-    recognition.onstart = () => {
-      asrState.value = 'listening'
-      logger.info('ASR 开始监听')
-    }
+  // ========== 分块策略 ==========
 
-    recognition.onresult = (event: any) => {
-      const result = event.results[0][0].transcript
-      // 添加时间戳确保每次识别都是唯一的值
-      transcript.value = `${result}__${Date.now()}`
-      logger.info('ASR 识别结果:', result)
-    }
-
-    recognition.onerror = (event: any) => {
-      logger.error('ASR 错误:', event.error)
-      asrState.value = 'idle'
-    }
-
-    recognition.onend = () => {
-      asrState.value = 'idle'
-      logger.info('ASR 结束监听')
-    }
-
-    return true
+  function shouldChunk(text: string): boolean {
+    // 标点触发
+    if (/[，。！？、；：,.!?;:]/.test(text)) return true
+    // 20 词触发
+    if (text.split(/\s+/).length >= 20) return true
+    return false
   }
 
-  /**
-   * 开始语音识别
-   */
-  function startListening(): void {
-    if (!recognition) {
-      if (!initASR()) return
+  // ========== 结果处理 ==========
+
+  function handlePartialResult(text: string) {
+    if (isCoolingDown) return
+    lastPartialText = text
+
+    // 清除旧防抖
+    if (debounceTimer) clearTimeout(debounceTimer)
+
+    // 分块策略判断
+    if (shouldChunk(text)) {
+      flushPartial(text)
+      return
     }
 
-    transcript.value = ''
-    recognition.start()
+    // 2500ms 防抖
+    debounceTimer = setTimeout(() => {
+      flushPartial(lastPartialText)
+    }, DEBOUNCE_MS)
   }
 
-  /**
-   * 停止语音识别
-   */
-  function stopListening(): void {
-    if (recognition) {
-      recognition.stop()
+  function flushPartial(text: string) {
+    if (!text.trim()) return
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
     }
+    emitTranscript(text, false)
   }
 
-  /**
-   * TTS 语音播报
-   */
-  function speak(text: string): Promise<void> {
+  function handleFinalResult(text: string) {
+    // 清除防抖
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+
+    // 立即发送最终结果
+    emitTranscript(text, true)
+
+    // 加入上下文
+    contextHistory.push(text)
+    if (contextHistory.length > MAX_CONTEXT) {
+      contextHistory.shift()
+    }
+
+    // 800ms 冷却期
+    isCoolingDown = true
+    if (cooldownTimer) clearTimeout(cooldownTimer)
+    cooldownTimer = setTimeout(() => {
+      isCoolingDown = false
+    }, COOLDOWN_MS)
+  }
+
+  function emitTranscript(text: string, isFinal: boolean) {
+    const ts = Date.now()
+    transcript.value = `${text}__${ts}__${isFinal ? 'final' : 'temp'}`
+    logger.info(`ASR ${isFinal ? '最终' : '增量'}: ${text}`)
+  }
+
+  // ========== WebSocket ==========
+
+  function connectWebSocket(): Promise<WebSocket> {
     return new Promise((resolve, reject) => {
-      if (!('speechSynthesis' in window)) {
-        logger.error('浏览器不支持 Speech Synthesis API')
-        reject(new Error('不支持TTS'))
-        return
+      const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
+      const wsUrl = `${protocol}//${location.host}/ai/v1/voice/asr/ws`
+
+      const socket = new WebSocket(wsUrl)
+
+      socket.onopen = () => {
+        logger.info('ASR WebSocket 已连接')
+        resolve(socket)
       }
 
-      // 取消之前的播报
-      window.speechSynthesis.cancel()
-
-      const utterance = new SpeechSynthesisUtterance(text)
-      utterance.lang = config.asrLanguage
-      utterance.rate = 1.0
-      utterance.pitch = 1.0
-
-      // 尝试查找指定声音
-      const voices = window.speechSynthesis.getVoices()
-      const targetVoice = voices.find(v => v.name.includes(config.ttsVoiceName))
-      if (targetVoice) {
-        utterance.voice = targetVoice
+      socket.onerror = (e) => {
+        logger.error('ASR WebSocket 错误:', e)
+        reject(new Error('WebSocket 连接失败'))
       }
 
-      utterance.onend = () => {
-        logger.info('TTS 播报完成:', text)
-        resolve()
+      socket.onmessage = (event) => {
+        try {
+          const msg = JSON.parse(event.data)
+
+          switch (msg.type) {
+            case 'status':
+              logger.info('ASR 状态:', msg.status)
+              if (msg.status === 'started') {
+                asrState.value = 'listening'
+              }
+              break
+
+            case 'result':
+              if (msg.is_final) {
+                handleFinalResult(msg.text)
+              } else {
+                handlePartialResult(msg.text)
+              }
+              break
+
+            case 'error':
+              logger.error('ASR 错误:', msg.message)
+              break
+          }
+        } catch {
+          // 忽略非 JSON 消息
+        }
       }
 
-      utterance.onerror = (event) => {
-        logger.error('TTS 错误:', event)
-        reject(event)
+      socket.onclose = () => {
+        logger.info('ASR WebSocket 已关闭')
       }
-
-      window.speechSynthesis.speak(utterance)
     })
   }
 
-  /**
-   * 快通道指令检测
-   * 检测是否为本地可处理的简单指令
-   */
-  function detectFastCommand(text: string): string | null {
-    const commands: Record<string, string[]> = {
-      'undo': ['撤销', '撤回', '取消'],
-      'clear': ['清空', '清除', '全部删除'],
-      'stop': ['停止', '停', '安静']
-    }
+  // ========== 音频捕获 ==========
 
-    for (const [action, keywords] of Object.entries(commands)) {
-      if (keywords.some(kw => text.includes(kw))) {
-        return action
+  async function startAudioCapture(): Promise<boolean> {
+    try {
+      mediaStream = await navigator.mediaDevices.getUserMedia({
+        audio: {
+          sampleRate: 16000,
+          channelCount: 1,
+          echoCancellation: true,
+          noiseSuppression: true,
+        }
+      })
+
+      audioCtx = new AudioContext({ sampleRate: 16000 })
+
+      // 加载 AudioWorklet
+      await audioCtx.audioWorklet.addModule('/pcm-processor.js')
+
+      const source = audioCtx.createMediaStreamSource(mediaStream)
+      workletNode = new AudioWorkletNode(audioCtx, 'pcm-processor')
+
+      // 接收 PCM 分片 → 发送到 WebSocket
+      workletNode.port.onmessage = (event) => {
+        if (ws?.readyState === WebSocket.OPEN) {
+          ws.send(event.data) // Int16 ArrayBuffer
+        }
       }
+
+      source.connect(workletNode)
+      workletNode.connect(audioCtx.destination)
+
+      logger.info('音频捕获已启动 (16kHz, 400ms chunks)')
+      return true
+    } catch (err) {
+      logger.error('音频捕获初始化失败:', err)
+      return false
+    }
+  }
+
+  function stopAudioCapture() {
+    workletNode?.disconnect()
+    workletNode = null
+
+    audioCtx?.close()
+    audioCtx = null
+
+    mediaStream?.getTracks().forEach(t => t.stop())
+    mediaStream = null
+  }
+
+  // ========== 公开方法 ==========
+
+  async function startListening(): Promise<void> {
+    transcript.value = ''
+    lastPartialText = ''
+    contextHistory = []
+
+    try {
+      // 1. 连接 WebSocket
+      ws = await connectWebSocket()
+
+      // 2. 启动音频捕获
+      const ok = await startAudioCapture()
+      if (!ok) {
+        ws.close()
+        ws = null
+        return
+      }
+
+      // 3. 发送 start 指令
+      ws.send(JSON.stringify({
+        action: 'start',
+        task_id: `asr-${Date.now()}`,
+        config: {
+          parameters: {
+            format: 'pcm',
+            sample_rate: 16000,
+          }
+        }
+      }))
+
+      asrState.value = 'listening'
+      logger.info('实时 ASR 已启动')
+    } catch (err) {
+      logger.error('启动 ASR 失败:', err)
+      asrState.value = 'idle'
+    }
+  }
+
+  function stopListening(): void {
+    if (asrState.value !== 'listening') return
+
+    // 1. 发送 stop 指令
+    if (ws?.readyState === WebSocket.OPEN) {
+      ws.send(JSON.stringify({ action: 'stop' }))
     }
 
+    // 2. 停止音频捕获
+    stopAudioCapture()
+
+    // 3. 清理防抖
+    if (debounceTimer) {
+      clearTimeout(debounceTimer)
+      debounceTimer = null
+    }
+    if (cooldownTimer) {
+      clearTimeout(cooldownTimer)
+      cooldownTimer = null
+    }
+
+    // 4. 如果有未发送的增量结果，立即发送
+    if (lastPartialText.trim()) {
+      emitTranscript(lastPartialText, true)
+    }
+
+    asrState.value = 'idle'
+    logger.info('实时 ASR 已停止')
+  }
+
+  async function speak(text: string): Promise<void> {
+    try {
+      const audioBlob = await textToSpeech({ text, voice: 'Chloe' })
+      const url = URL.createObjectURL(audioBlob)
+      const audio = new Audio(url)
+      return new Promise((resolve, reject) => {
+        audio.onended = () => { URL.revokeObjectURL(url); resolve() }
+        audio.onerror = (e) => { URL.revokeObjectURL(url); reject(e) }
+        audio.play().catch(reject)
+      })
+    } catch {
+      await speakFallback(text)
+    }
+  }
+
+  function speakFallback(text: string): Promise<void> {
+    return new Promise((resolve, reject) => {
+      if (!window.speechSynthesis) { reject(new Error('不支持TTS')); return }
+      window.speechSynthesis.cancel()
+      const u = new SpeechSynthesisUtterance(text)
+      u.lang = 'zh-CN'
+      u.onend = () => resolve()
+      u.onerror = reject
+      window.speechSynthesis.speak(u)
+    })
+  }
+
+  function detectFastCommand(text: string): string | null {
+    const cmds: Record<string, string[]> = {
+      undo: ['撤销', '撤回', '取消'],
+      clear: ['清空', '清除', '全部删除'],
+      stop: ['停止', '停', '安静']
+    }
+    for (const [action, kws] of Object.entries(cmds)) {
+      if (kws.some(k => text.includes(k))) return action
+    }
     return null
   }
 
-  // 组件卸载时清理
+  // 清理
   onUnmounted(() => {
-    if (recognition) {
-      recognition.abort()
-    }
-    window.speechSynthesis.cancel()
+    stopListening()
+    ws?.close()
   })
 
   return {
-    // 状态
     asrState,
     transcript,
-
-    // 方法
     startListening,
     stopListening,
     speak,
-    detectFastCommand
+    detectFastCommand,
   }
 }

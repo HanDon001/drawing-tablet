@@ -1,13 +1,351 @@
 <!DOCTYPE html>
 <html lang="zh-CN">
-  <head>
-    <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <title>VoiceCanvas - 纯语音绘图工具</title>
-  </head>
-  <body>
-    <div id="app"></div>
-    <script type="module" src="/src/main.ts"></script>
-  </body>
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceCanvas - 专业语音绘图控制台</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'deep-brown': '#7A4F28',
+                        'mid-brown': '#9B6A3A',
+                        'light-brown': '#E8D9C7',
+                        'warm-orange': '#E69F56',
+                        'cream': '#F8F5F1',
+                        'body-text': '#333333',
+                    },
+                    fontFamily: {
+                        'display': ['Playfair Display', 'serif'],
+                        'body': ['Noto Sans SC', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        body { font-family: 'Noto Sans SC', sans-serif; background-color: #F8F5F1; color: #333; }
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: #D1C4B5; border-radius: 3px; }
+        ::-webkit-scrollbar-thumb:hover { background: #9B6A3A; }
+
+        @keyframes pulse-ring { 0% { transform: scale(0.8); opacity: 1; } 100% { transform: scale(1.8); opacity: 0; } }
+        .mic-pulse::before { content: ''; position: absolute; inset: 0; border-radius: 50%; border: 2px solid #EF4444; animation: pulse-ring 1.5s cubic-bezier(0.215, 0.61, 0.355, 1) infinite; }
+
+        .canvas-grid { background-image: linear-gradient(#f0ece6 1px, transparent 1px), linear-gradient(90deg, #f0ece6 1px, transparent 1px); background-size: 40px 40px; }
+        .log-enter { animation: logSlideIn 0.3s ease-out forwards; }
+        @keyframes logSlideIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+        /* --- 专业侧边栏样式优化 --- */
+        .sidebar-section { border-bottom: 1px solid #E8D9C7; }
+
+        .section-header {
+            display: flex; align-items: center; justify-content: space-between;
+            padding: 10px 16px; cursor: pointer; transition: background-color 0.2s;
+            user-select: none;
+        }
+        .section-header:hover { background-color: #F8F5F1; }
+        .section-title { font-size: 10px; font-weight: 700; color: #9B6A3A; letter-spacing: 0.1em; text-transform: uppercase; }
+        .section-arrow { font-size: 8px; color: #9B6A3A; transition: transform 0.3s ease; }
+        .section-arrow.open { transform: rotate(90deg); }
+
+        .section-content { padding: 0 16px 14px; }
+
+        /* 工具按钮 */
+        .tool-btn {
+            display: flex; flex-direction: column; align-items: center; justify-content: center;
+            padding: 6px 0; border-radius: 8px; transition: all 0.2s; position: relative;
+            color: #7A4F28; background: transparent; border: 1px solid transparent;
+        }
+        .tool-btn:hover { background-color: #F8F5F1; border-color: #E8D9C7; }
+        .tool-btn.active {
+            background-color: #7A4F28; color: white; border-color: #7A4F28;
+            box-shadow: 0 2px 5px rgba(122, 79, 40, 0.2);
+        }
+
+        /* 胶囊选择器 */
+        .capsule-group { display: flex; background-color: #F8F5F1; border-radius: 8px; padding: 3px; border: 1px solid #E8D9C7; }
+        .capsule-btn {
+            flex: 1; text-align: center; font-size: 11px; font-weight: 500; padding: 4px 0;
+            border-radius: 6px; color: #9B6A3A; cursor: pointer; transition: all 0.2s;
+        }
+        .capsule-btn.active { background-color: white; color: #7A4F28; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+
+        /* 颜色选择器 */
+        .color-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+        .color-label { font-size: 10px; color: #9B6A3A; width: 30px; font-weight: 600; }
+        .color-swatches { display: flex; gap: 4px; flex-wrap: wrap; }
+        .swatch {
+            width: 18px; height: 18px; border-radius: 50%; cursor: pointer;
+            border: 2px solid transparent; transition: all 0.2s; box-sizing: border-box;
+        }
+        .swatch:hover { transform: scale(1.15); }
+        .swatch.active { border-color: #7A4F28; box-shadow: 0 0 0 2px #F8F5F1, 0 0 0 4px #7A4F28; }
+
+        /* 九宫格 */
+        .pos-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+        .pos-dot { width: 100%; aspect-ratio: 1; border-radius: 4px; background-color: #E8D9C7; cursor: pointer; transition: all 0.2s; border: 1px solid transparent; }
+        .pos-dot:hover { background-color: #D1C4B5; }
+        .pos-dot.active { background-color: #7A4F28; border-color: #9B6A3A; }
+
+        /* 图层列表 */
+        .layer-item {
+            display: flex; align-items: center; gap: 8px; padding: 6px 8px; border-radius: 6px;
+            cursor: pointer; transition: all 0.2s; border: 1px solid transparent; margin-bottom: 2px;
+        }
+        .layer-item:hover { background-color: #F8F5F1; }
+        .layer-item.active { background-color: #E8D9C7; border-color: #D1C4B5; }
+        .layer-thumb { width: 24px; height: 24px; border-radius: 4px; background-color: #f0f0f0; border: 1px solid #e0e0e0; overflow: hidden; }
+        .layer-actions { margin-left: auto; opacity: 0; transition: opacity 0.2s; display: flex; gap: 4px; }
+        .layer-item:hover .layer-actions { opacity: 1; }
+        .layer-action-btn { color: #9B6A3A; font-size: 10px; padding: 2px; }
+        .layer-action-btn:hover { color: #EF4444; }
+    </style>
+</head>
+
+<body class="h-screen overflow-hidden flex flex-col">
+
+    <!-- 顶部导航栏 -->
+    <header class="bg-deep-brown text-white px-4 py-2 flex items-center justify-between shadow-lg z-50 flex-shrink-0">
+        <div class="flex items-center gap-2">
+            <a href="/site/index.html" class="w-7 h-7 rounded-full bg-warm-orange flex items-center justify-center hover:bg-orange-400 transition-colors" title="返回官网">
+                <i class="fas fa-palette text-xs"></i>
+            </a>
+            <h1 class="font-display text-base tracking-wide">VoiceCanvas</h1>
+            <span class="text-[9px] bg-white/20 px-1.5 py-0.5 rounded hidden sm:inline">PRO v1.0</span>
+        </div>
+        <div class="flex items-center gap-4 text-xs">
+            <a href="/site/index.html" class="text-light-brown/60 hover:text-white transition-colors hidden sm:inline">
+                <i class="fas fa-home mr-1"></i>官网
+            </a>
+            <div id="statusIndicator" class="flex items-center gap-1.5 text-light-brown/80">
+                <span class="w-1.5 h-1.5 rounded-full bg-green-400"></span><span>就绪</span>
+            </div>
+        </div>
+    </header>
+
+    <!-- 主体内容区 -->
+    <main class="flex-1 flex overflow-hidden">
+
+        <!-- 左侧专业工具栏 -->
+        <aside class="w-60 bg-white border-r border-light-brown flex flex-col flex-shrink-0 text-xs overflow-y-auto">
+
+            <!-- 图形工具 -->
+            <div class="sidebar-section">
+                <div class="section-header" onclick="togglePanel('shapesPanel')">
+                    <span class="section-title">Shapes</span>
+                    <i class="fas fa-chevron-right section-arrow open" id="shapesPanelArrow"></i>
+                </div>
+                <div class="section-content" id="shapesPanel">
+                    <div class="grid grid-cols-4 gap-1.5">
+                        <button onclick="toolAction('draw', 'circle')" class="tool-btn active" data-shape="circle" title="圆形"><i class="far fa-circle text-sm mb-0.5"></i><span class="text-[9px]">圆形</span></button>
+                        <button onclick="toolAction('draw', 'rectangle')" class="tool-btn" data-shape="rectangle" title="矩形"><i class="far fa-square text-sm mb-0.5"></i><span class="text-[9px]">矩形</span></button>
+                        <button onclick="toolAction('draw', 'triangle')" class="tool-btn" data-shape="triangle" title="三角形"><svg class="w-3.5 h-3.5 mb-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3L22 21H2L12 3Z"/></svg><span class="text-[9px]">三角</span></button>
+                        <button onclick="toolAction('draw', 'line')" class="tool-btn" data-shape="line" title="直线"><i class="fas fa-minus text-sm mb-0.5 rotate-45"></i><span class="text-[9px]">直线</span></button>
+                        <button onclick="toolAction('draw', 'star')" class="tool-btn" data-shape="star" title="星形"><i class="far fa-star text-sm mb-0.5"></i><span class="text-[9px]">星形</span></button>
+                        <button onclick="toolAction('draw', 'diamond')" class="tool-btn" data-shape="diamond" title="菱形"><i class="far fa-square text-sm mb-0.5 rotate-45 scale-75"></i><span class="text-[9px]">菱形</span></button>
+                        <button onclick="toolAction('draw', 'arrow')" class="tool-btn" data-shape="arrow" title="箭头"><i class="fas fa-long-arrow-alt-right text-sm mb-0.5"></i><span class="text-[9px]">箭头</span></button>
+                        <button onclick="toolAction('draw', 'hexagon')" class="tool-btn" data-shape="hexagon" title="六边形"><i class="fas fa-hexagon-xmark text-sm mb-0.5"></i><span class="text-[9px]">六边</span></button>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 外观属性 -->
+            <div class="sidebar-section">
+                <div class="section-header" onclick="togglePanel('appearancePanel')">
+                    <span class="section-title">Appearance</span>
+                    <i class="fas fa-chevron-right section-arrow open" id="appearancePanelArrow"></i>
+                </div>
+                <div class="section-content space-y-3" id="appearancePanel">
+                    <!-- 填充与描边颜色 -->
+                    <div>
+                        <div class="color-row">
+                            <span class="color-label">Fill</span>
+                            <div class="color-swatches" id="fillSwatches"></div>
+                        </div>
+                        <div class="color-row" style="margin-bottom: 0;">
+                            <span class="color-label">Line</span>
+                            <div class="color-swatches" id="strokeSwatches"></div>
+                        </div>
+                    </div>
+
+                    <!-- 大小选择 -->
+                    <div>
+                        <label class="text-[10px] text-mid-brown/70 block mb-1.5">Size</label>
+                        <div class="capsule-group">
+                            <div onclick="toolAction('size', 'small')" class="capsule-btn" data-size="small">S</div>
+                            <div onclick="toolAction('size', 'medium')" class="capsule-btn active" data-size="medium">M</div>
+                            <div onclick="toolAction('size', 'large')" class="capsule-btn" data-size="large">L</div>
+                        </div>
+                    </div>
+
+                    <!-- 透明度 -->
+                    <div>
+                        <label class="text-[10px] text-mid-brown/70 block mb-1.5">Opacity</label>
+                        <div class="capsule-group">
+                            <div onclick="toolAction('opacity', '1')" class="capsule-btn active" data-opacity="1">100%</div>
+                            <div onclick="toolAction('opacity', '0.7')" class="capsule-btn" data-opacity="0.7">70%</div>
+                            <div onclick="toolAction('opacity', '0.4')" class="capsule-btn" data-opacity="0.4">40%</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 位置布局 -->
+            <div class="sidebar-section">
+                <div class="section-header" onclick="togglePanel('positionPanel')">
+                    <span class="section-title">Position</span>
+                    <i class="fas fa-chevron-right section-arrow open" id="positionPanelArrow"></i>
+                </div>
+                <div class="section-content" id="positionPanel">
+                    <div class="pos-grid w-20 mx-auto">
+                        <div class="pos-dot" onclick="toolAction('position', 'left_top')" data-pos="left_top"></div>
+                        <div class="pos-dot" onclick="toolAction('position', 'top')" data-pos="top"></div>
+                        <div class="pos-dot" onclick="toolAction('position', 'right_top')" data-pos="right_top"></div>
+                        <div class="pos-dot" onclick="toolAction('position', 'left')" data-pos="left"></div>
+                        <div class="pos-dot active" onclick="toolAction('position', 'center')" data-pos="center"></div>
+                        <div class="pos-dot" onclick="toolAction('position', 'right')" data-pos="right"></div>
+                        <div class="pos-dot" onclick="toolAction('position', 'left_bottom')" data-pos="left_bottom"></div>
+                        <div class="pos-dot" onclick="toolAction('position', 'bottom')" data-pos="bottom"></div>
+                        <div class="pos-dot" onclick="toolAction('position', 'right_bottom')" data-pos="right_bottom"></div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- 图层列表 -->
+            <div class="flex-1 flex flex-col min-h-0 mt-1">
+                <div class="section-header border-b-0 pb-0">
+                    <span class="section-title">Layers (<span id="objCountSide">0</span>)</span>
+                </div>
+                <div class="flex-1 overflow-y-auto px-3 pb-2" id="objectList">
+                    <div class="text-center text-[10px] text-mid-brown/40 py-6">暂无图层</div>
+                </div>
+            </div>
+
+            <!-- 底部快捷操作 -->
+            <div class="p-3 border-t border-light-brown bg-cream/20 space-y-2">
+                <div class="flex gap-2">
+                    <button onclick="VC.Cmd.undo()" class="flex-1 py-2 rounded-lg bg-white border border-light-brown text-mid-brown text-[10px] font-medium hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"><i class="fas fa-undo mr-1"></i>Undo</button>
+                    <button onclick="VC.Cmd.clearAll()" class="flex-1 py-2 rounded-lg bg-white border border-light-brown text-mid-brown text-[10px] font-medium hover:bg-red-50 hover:text-red-500 hover:border-red-100 transition-all"><i class="fas fa-trash-alt mr-1"></i>Clear</button>
+                </div>
+                <button id="aiDemoBtn" onclick="VC.Agent.demonstrate()" class="w-full py-2 rounded-lg bg-purple-500 text-white text-[10px] font-medium hover:bg-purple-600 transition-all">
+                    <i class="fas fa-robot mr-1"></i>AI 创作演示
+                </button>
+            </div>
+        </aside>
+
+        <!-- 中间：画布区域 -->
+        <div class="flex-1 p-4 flex flex-col bg-cream/50 relative">
+            <div class="flex-1 bg-white rounded-xl shadow-inner border border-light-brown relative overflow-hidden canvas-grid">
+                <canvas id="mainCanvas" class="w-full h-full block"></canvas>
+                <div id="emptyHint" class="absolute inset-0 flex flex-col items-center justify-center text-mid-brown/30 pointer-events-none">
+                    <i class="fas fa-microphone-lines text-5xl mb-3"></i>
+                    <p class="text-sm font-medium">点击麦克风，或使用左侧工具</p>
+                </div>
+            </div>
+            <div class="flex flex-col items-center mt-4 relative">
+                <div class="h-6 mb-2 text-sm font-medium text-deep-brown text-center flex items-center">
+                    <span id="transcriptText" class="opacity-0 transition-opacity duration-300 bg-light-brown/30 px-3 py-0.5 rounded-full text-xs"></span>
+                </div>
+                <button id="micBtn" class="w-14 h-14 rounded-full bg-warm-orange text-white text-xl flex items-center justify-center shadow-lg hover:bg-mid-brown transition-all duration-300 focus:outline-none relative z-10">
+                    <i class="fas fa-microphone"></i>
+                </button>
+            </div>
+        </div>
+
+        <!-- 右侧：AI 对话聊天栏 -->
+        <aside class="w-72 bg-white border-l border-light-brown flex flex-col flex-shrink-0">
+            <div class="p-3 border-b border-light-brown/50 bg-cream/30 flex items-center justify-between">
+                <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase"><i class="fas fa-robot mr-1"></i>小画助手</h3>
+                <button onclick="toggleLogPanel()" class="text-[10px] text-mid-brown/50 hover:text-mid-brown transition-colors" title="日志">
+                    <i class="fas fa-list-ul"></i> 日志
+                </button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-3 space-y-3 text-[11px]" id="chatContainer">
+                <div class="text-center text-[10px] text-mid-brown/40 my-4">说出你想画的内容吧 🎨</div>
+            </div>
+        </aside>
+
+        <!-- 日志浮层（默认隐藏） -->
+        <div id="logPanel" class="fixed left-60 bottom-4 w-80 max-h-72 bg-white rounded-xl shadow-2xl border border-light-brown z-50 flex-col" style="display: none;">
+            <div class="flex items-center justify-between px-3 py-2 border-b border-light-brown/50 bg-cream/30 rounded-t-xl">
+                <h3 class="text-[10px] font-bold text-mid-brown tracking-widest uppercase"><i class="fas fa-list-ul mr-1"></i>Event Log</h3>
+                <button onclick="toggleLogPanel()" class="text-mid-brown/50 hover:text-mid-brown text-[10px]"><i class="fas fa-times"></i></button>
+            </div>
+            <div class="flex-1 overflow-y-auto p-3 space-y-2 text-[11px] max-h-60" id="logContainer">
+                <div class="text-center text-[10px] text-mid-brown/40 my-4">--- Session Started ---</div>
+            </div>
+        </div>
+    </main>
+
+    <!-- 模块化脚本 -->
+    <script src="js/vc.js"></script>
+    <script src="js/state.js"></script>
+    <script src="js/store.js"></script>
+    <script src="js/canvas.js"></script>
+    <script src="js/voice.js"></script>
+    <script src="js/parser.js"></script>
+    <script src="js/cmd.js"></script>
+    <script src="js/agent.js"></script>
+    <script src="js/log.js"></script>
+    <script src="js/ui.js"></script>
+
+    <!-- 应用初始化 -->
+    <script>
+        // 日志面板切换
+        function toggleLogPanel() {
+            const panel = document.getElementById('logPanel');
+            panel.style.display = panel.style.display === 'none' ? 'flex' : 'none';
+        }
+
+        // 添加聊天消息
+        function addChatMessage(role, text) {
+            const container = document.getElementById('chatContainer');
+            const emptyHint = container.querySelector('.text-center');
+            if (emptyHint) emptyHint.remove();
+
+            const isUser = role === 'user';
+            const entry = document.createElement('div');
+            entry.className = `flex gap-2 ${isUser ? 'flex-row-reverse' : ''}`;
+            entry.innerHTML = `
+                <div class="w-6 h-6 rounded-full ${isUser ? 'bg-deep-brown' : 'bg-warm-orange'} flex items-center justify-center flex-shrink-0">
+                    <i class="fas ${isUser ? 'fa-user' : 'fa-robot'} text-white text-[8px]"></i>
+                </div>
+                <div class="${isUser ? 'bg-deep-brown text-white' : 'bg-light-brown/50 text-body-text'} px-3 py-2 rounded-xl text-[11px] leading-relaxed max-w-[80%]" style="${isUser ? 'border-bottom-right-radius: 4px;' : 'border-bottom-left-radius: 4px;'}">
+                    ${escapeHtml(text)}
+                </div>
+            `;
+            container.appendChild(entry);
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function escapeHtml(t) { const d = document.createElement('div'); d.textContent = t; return d.innerHTML; }
+
+        window.addEventListener('DOMContentLoaded', async () => {
+            // 初始化 Canvas
+            VC.Canvas.init(document.getElementById('mainCanvas'));
+
+            // 初始化持久化
+            VC.Store.init();
+
+            // 初始化日志
+            VC.Log.init('logContainer');
+
+            // 初始化 UI
+            VC.UI.init();
+
+            // 初始化语音服务
+            await VC.Voice.init();
+
+            console.log('[App] VoiceCanvas 初始化完成');
+        });
+    </script>
+</body>
 </html>
