@@ -1,0 +1,24 @@
+{
+  "name": "voicecanvas-web",
+  "private": true,
+  "version": "0.1.0",
+  "description": "VoiceCanvas 纯语音绘图工具 - 前端",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vue-tsc --noEmit && vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --noEmit"
+  },
+  "dependencies": {
+    "vue": "^3.4.15",
+    "pinia": "^2.1.7",
+    "axios": "^1.6.5"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^5.0.3",
+    "typescript": "^5.3.3",
+    "vite": "^5.0.11",
+    "vue-tsc": "^2.0.0"
+  }
+}
