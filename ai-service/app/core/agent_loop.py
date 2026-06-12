@@ -100,6 +100,61 @@ class CanvasState:
         return None
 
 
+class UserPreferences:
+    """用户偏好记忆（学习用户习惯）"""
+
+    def __init__(self):
+        self.color_freq = {}
+        self.shape_freq = {}
+        self.position_freq = {}
+        self.command_count = 0
+
+    def learn(self, action: Dict):
+        """从用户指令中学习偏好"""
+        params = action.get("params", {})
+        self.command_count += 1
+
+        if "color" in params:
+            c = params["color"]
+            self.color_freq[c] = self.color_freq.get(c, 0) + 1
+
+        if "shape_type" in params:
+            s = params["shape_type"]
+            self.shape_freq[s] = self.shape_freq.get(s, 0) + 1
+
+        if "position" in params:
+            p = params["position"]
+            self.position_freq[p] = self.position_freq.get(p, 0) + 1
+
+    def suggest(self) -> str:
+        """基于偏好给出建议"""
+        if self.command_count < 2:
+            return ""
+
+        suggestions = []
+
+        if self.color_freq:
+            top_color = max(self.color_freq, key=self.color_freq.get)
+            if self.color_freq[top_color] >= 2:
+                suggestions.append(f"你好像喜欢{top_color}色")
+
+        if self.shape_freq:
+            top_shape = max(self.shape_freq, key=self.shape_freq.get)
+            shape_names = {"circle": "圆", "rectangle": "方块", "triangle": "三角形", "line": "线"}
+            name = shape_names.get(top_shape, top_shape)
+            if self.shape_freq[top_shape] >= 2:
+                suggestions.append(f"常画{name}")
+
+        if suggestions:
+            return "，".join(suggestions) + "。要继续画吗？"
+        return ""
+
+    def get_favorite_color(self) -> str:
+        if self.color_freq:
+            return max(self.color_freq, key=self.color_freq.get)
+        return "黑"
+
+
 class AgentLoop:
     """
     永久循环 Agent
@@ -138,6 +193,7 @@ class AgentLoop:
         self.agent = Agent()
         self.context = ConversationContext(max_turns=5)
         self.canvas = CanvasState()
+        self.prefs = UserPreferences()
         self.state = "idle"
         self.last_activity = time.time()
         self.idle_timeout = 30  # 30 秒无操作触发关怀
@@ -228,9 +284,10 @@ class AgentLoop:
         try:
             result = await self.agent.chat(text, canvas_ctx)
 
-            # 执行动作
+            # 执行动作 + 学习偏好
             if result.get("actions"):
                 for action in result["actions"]:
+                    self.prefs.learn(action)
                     await self.send_action(action)
 
             # 播报结果
@@ -245,9 +302,13 @@ class AgentLoop:
         self.state = "idle"
 
     async def proactive_care(self):
-        """主动关怀"""
+        """主动关怀（带偏好建议）"""
         if self.canvas.is_empty():
             msg = self._pick("empty_canvas")
+            # 基于偏好建议
+            suggestion = self.prefs.suggest()
+            if suggestion:
+                msg += suggestion
         else:
             msg = self._pick("idle_care", count=self.canvas.count())
 
