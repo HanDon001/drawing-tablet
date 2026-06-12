@@ -1,12 +1,14 @@
 """
 VoiceCanvas AI Service - FastAPI 入口
-CORS 配置、路由挂载、生命周期事件
+CORS 配置、路由挂载、生命周期事件、异常捕获中间件
 """
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from contextlib import asynccontextmanager
 from loguru import logger
+import traceback
 
 from .core.config import settings
 from .api.v1.agent import router as agent_router
@@ -50,6 +52,45 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+
+# 全局异常捕获中间件
+@app.middleware("http")
+async def catch_exceptions_middleware(request: Request, call_next):
+    """全局异常捕获，记录日志并返回友好提示"""
+    # 获取请求ID
+    request_id = request.headers.get("X-Request-ID", "unknown")
+
+    try:
+        response = await call_next(request)
+        return response
+    except Exception as e:
+        # 记录详细错误日志
+        logger.error(f"[{request_id}] 未捕获异常: {str(e)}")
+        logger.error(f"[{request_id}] 异常堆栈:\n{traceback.format_exc()}")
+
+        # 返回友好提示，不暴露堆栈
+        return JSONResponse(
+            status_code=500,
+            content={
+                "detail": "服务器内部错误，请稍后重试",
+                "request_id": request_id
+            }
+        )
+
+
+# 请求日志中间件
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    """记录请求日志"""
+    request_id = request.headers.get("X-Request-ID", "unknown")
+    logger.info(f"[{request_id}] {request.method} {request.url.path}")
+
+    response = await call_next(request)
+
+    logger.info(f"[{request_id}] 响应状态: {response.status_code}")
+    return response
+
 
 # 挂载路由
 app.include_router(agent_router)
