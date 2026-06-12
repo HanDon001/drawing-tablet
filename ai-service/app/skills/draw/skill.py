@@ -3,8 +3,8 @@
 封装绘图相关的 Prompt 和 Tools
 """
 
-from core.skill_base import BaseSkill
-from skills.draw.tools import draw_shape, edit_shape, delete_shape
+from app.core.skill_base import BaseSkill
+from app.skills.draw.tools import draw_shape, edit_shape, delete_shape
 
 
 class DrawSkill(BaseSkill):

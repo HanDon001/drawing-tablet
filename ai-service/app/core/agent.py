@@ -1,19 +1,15 @@
 """
 Agent 核心调度模块
-整合通义千问与 Skill，实现意图识别和工具调用
+简化版本，直接路由到对应的 Skill
 """
 
 from typing import Dict, List, Any, Optional
 from loguru import logger
 
-from langchain_community.chat_models.tongyi import ChatTongyi
-from langchain.agents import AgentExecutor, create_tool_calling_agent
-from langchain_core.prompts import ChatPromptTemplate, MessagesPlaceholder
-
 from .config import settings
 from .skill_base import BaseSkill
-from skills.draw.skill import DrawSkill
-from skills.query.skill import QuerySkill
+from app.skills.draw.skill import DrawSkill
+from app.skills.query.skill import QuerySkill
 
 
 class Agent:
@@ -22,25 +18,16 @@ class Agent:
 
     职责：
     1. 根据用户文本路由到合适的 Skill
-    2. 组装 Prompt 和 Tools
-    3. 调用大模型执行
-    4. 解析结果返回 reply 和 actions
+    2. 解析结果返回 reply 和 actions
     """
 
     def __init__(self):
         """初始化 Agent"""
-        # 初始化通义千问模型
-        self.llm = ChatTongyi(
-            model=settings.LLM_MODEL,
-            dashscope_api_key=settings.DASHSCOPE_API_KEY,
-            streaming=False
-        )
-
         # 初始化 Skills
         self.draw_skill = DrawSkill()
         self.query_skill = QuerySkill()
 
-        logger.info(f"Agent 初始化完成，模型: {settings.LLM_MODEL}")
+        logger.info("Agent 初始化完成")
 
     def _route_skill(self, text: str) -> BaseSkill:
         """
@@ -65,52 +52,88 @@ class Agent:
         logger.info("路由到 DrawSkill")
         return self.draw_skill
 
-    def _create_executor(self, skill: BaseSkill) -> AgentExecutor:
+    def _parse_intent(self, text: str) -> Dict[str, Any]:
         """
-        为指定 Skill 创建 AgentExecutor
+        简单的意图解析（不依赖LLM）
 
         Args:
-            skill: 技能实例
+            text: 用户输入文本
 
         Returns:
-            AgentExecutor 实例
+            解析结果
         """
-        # 获取 Skill 的 Prompt 和 Tools
-        skill_prompt = skill.get_prompt()
-        tools = skill.get_tools()
+        result = {
+            "tool": None,
+            "params": {},
+            "reply": ""
+        }
 
-        # 系统提示词
-        system_prompt = f"""你是 VoiceCanvas 的智能语音助手"小画"，专为残障人士服务。
+        # 删除操作
+        if "删除" in text or "去掉" in text:
+            result["tool"] = "delete_shape"
+            result["reply"] = f"已删除图形"
+            return result
 
-【全局规则】
-1. 你的回复将被 TTS 播报，严禁使用 Markdown 格式，保持简短口语化。
-2. 每次执行动作后，必须用自然语言确认结果。
-3. 当用户说"它"、"刚才那个"时，需结合上下文解析。
-4. 若遇到危险或不当请求，温和拒绝。
+        # 编辑操作
+        if "改成" in text or "修改" in text or "变成" in text:
+            result["tool"] = "edit_shape"
+            # 简单提取颜色
+            colors = ["红", "蓝", "绿", "黄", "黑", "白", "橙"]
+            for color in colors:
+                if color in text:
+                    result["params"]["new_color"] = color
+                    result["reply"] = f"已将颜色改为{color}"
+                    break
+            return result
 
-{skill_prompt}
-"""
+        # 绘制操作
+        draw_keywords = ["画", "绘制", "画一个", "画个"]
+        for keyword in draw_keywords:
+            if keyword in text:
+                result["tool"] = "draw_shape"
 
-        # 创建 Prompt Template
-        prompt = ChatPromptTemplate.from_messages([
-            ("system", system_prompt),
-            ("human", "{input}"),
-            MessagesPlaceholder(variable_name="agent_scratchpad"),
-        ])
+                # 提取形状
+                if "圆" in text:
+                    result["params"]["shape_type"] = "circle"
+                elif "方" in text or "矩" in text:
+                    result["params"]["shape_type"] = "rectangle"
+                elif "三角" in text:
+                    result["params"]["shape_type"] = "triangle"
+                else:
+                    result["params"]["shape_type"] = "circle"
 
-        # 创建 Agent
-        agent = create_tool_calling_agent(self.llm, tools, prompt)
+                # 提取颜色
+                colors = {"红": "红", "蓝": "蓝", "绿": "绿", "黄": "黄", "黑": "黑", "白": "白", "橙": "橙"}
+                for key, value in colors.items():
+                    if key in text:
+                        result["params"]["color"] = value
+                        break
 
-        # 创建 AgentExecutor
-        executor = AgentExecutor(
-            agent=agent,
-            tools=tools,
-            verbose=True,
-            handle_parsing_errors=True,
-            max_iterations=3
-        )
+                # 提取位置
+                positions = {
+                    "中间": "center",
+                    "左上": "left_top",
+                    "右上": "right_top",
+                    "左下": "left_bottom",
+                    "右下": "right_bottom"
+                }
+                for key, value in positions.items():
+                    if key in text:
+                        result["params"]["position"] = value
+                        break
 
-        return executor
+                # 提取标签
+                if "叫做" in text or "叫" in text:
+                    # 简单提取标签
+                    import re
+                    match = re.search(r'叫[做]?["\s]*(\w+)', text)
+                    if match:
+                        result["params"]["tag"] = match.group(1)
+
+                result["reply"] = f"已绘制图形"
+                break
+
+        return result
 
     async def chat(
         self,
@@ -136,28 +159,22 @@ class Agent:
         logger.info(f"Agent.chat 收到: text='{text}', canvas_context='{canvas_context}'")
 
         try:
-            # 1. 路由到合适的 Skill
-            skill = self._route_skill(text)
+            # 简单的意图解析
+            intent = self._parse_intent(text)
 
-            # 2. 创建 Executor
-            executor = self._create_executor(skill)
+            actions = []
+            if intent["tool"]:
+                actions.append({
+                    "tool": intent["tool"],
+                    "params": intent["params"]
+                })
 
-            # 3. 组装输入
-            input_text = text
-            if canvas_context:
-                input_text = f"【画布状态】{canvas_context}\n\n【用户指令】{text}"
+            reply = intent["reply"] or f"收到指令：{text}"
 
-            # 4. 执行
-            result = await executor.ainvoke({"input": input_text})
-
-            # 5. 解析结果
-            output = result.get("output", "")
-            actions = self._parse_actions(result)
-
-            logger.info(f"Agent.chat 返回: reply='{output}', actions={actions}")
+            logger.info(f"Agent.chat 返回: reply='{reply}', actions={actions}")
 
             return {
-                "reply": output,
+                "reply": reply,
                 "actions": actions
             }
 
@@ -167,32 +184,6 @@ class Agent:
                 "reply": "抱歉，处理指令时出错了，请稍后重试",
                 "actions": []
             }
-
-    def _parse_actions(self, result: Dict[str, Any]) -> List[Dict[str, Any]]:
-        """
-        从 Agent 结果中解析工具调用动作
-
-        Args:
-            result: Agent 执行结果
-
-        Returns:
-            动作列表
-        """
-        actions = []
-
-        # 从 intermediate_steps 中提取工具调用
-        intermediate_steps = result.get("intermediate_steps", [])
-
-        for step in intermediate_steps:
-            if len(step) >= 2:
-                agent_action, tool_output = step
-                if hasattr(agent_action, "tool") and hasattr(agent_action, "tool_input"):
-                    actions.append({
-                        "tool": agent_action.tool,
-                        "params": agent_action.tool_input
-                    })
-
-        return actions
 
 
 # 全局 Agent 实例

@@ -3,8 +3,8 @@
 封装画布查询相关的 Prompt 和 Tools
 """
 
-from core.skill_base import BaseSkill
-from skills.query.tools import describe_canvas
+from app.core.skill_base import BaseSkill
+from app.skills.query.tools import describe_canvas
 
 
 class QuerySkill(BaseSkill):
