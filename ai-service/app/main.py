@@ -12,6 +12,8 @@ import traceback
 
 from .core.config import settings
 from .api.v1.agent import router as agent_router
+from .api.v1.voice import router as voice_router
+from .api.v1.voice_ws import router as voice_ws_router
 
 # 导入 Skills 模块，确保工具被注册到 ToolRegistry
 from .skills.draw import tools as draw_tools
@@ -79,21 +81,36 @@ async def catch_exceptions_middleware(request: Request, call_next):
         )
 
 
-# 请求日志中间件
+# 请求日志 + 延迟监控中间件
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
-    """记录请求日志"""
+    """记录请求日志 + Prometheus 延迟指标"""
+    import time as _time
+    from .core.metrics import E2E_LATENCY, REQUEST_COUNT, ERROR_COUNT
+
     request_id = request.headers.get("X-Request-ID", "unknown")
-    logger.info(f"[{request_id}] {request.method} {request.url.path}")
+    path = request.url.path
+    logger.info(f"[{request_id}] {request.method} {path}")
 
+    start = _time.time()
     response = await call_next(request)
+    elapsed = _time.time() - start
 
-    logger.info(f"[{request_id}] 响应状态: {response.status_code}")
+    # 记录延迟
+    E2E_LATENCY.observe(elapsed)
+    REQUEST_COUNT.labels(endpoint=path, method=request.method).inc()
+
+    if response.status_code >= 400:
+        ERROR_COUNT.labels(component='http').inc()
+
+    logger.info(f"[{request_id}] 响应状态: {response.status_code} ({elapsed:.2f}s)")
     return response
 
 
 # 挂载路由
 app.include_router(agent_router)
+app.include_router(voice_router)
+app.include_router(voice_ws_router)
 
 
 @app.get("/")
@@ -104,3 +121,11 @@ async def root():
         "version": "0.1.0",
         "status": "running"
     }
+
+
+@app.get("/metrics")
+async def metrics():
+    """Prometheus 指标端点"""
+    from fastapi.responses import Response
+    from .core.metrics import get_metrics, get_content_type
+    return Response(content=get_metrics(), media_type=get_content_type())
