@@ -1,10 +1,10 @@
 /**
  * 语音服务组合式函数
- * 封装 ASR (语音识别) 和 TTS (语音合成)
+ * 使用小米 MiMo ASR/TTS API
  */
 
 import { ref, onUnmounted } from 'vue'
-import { config } from '@/config'
+import { speechToText, textToSpeech } from '@/api'
 import { logger } from '@/utils/logger'
 
 // ASR 状态
@@ -18,107 +18,170 @@ export function useVoice() {
   const asrState = ref<AsrState>('idle')
   const transcript = ref('')
 
-  // Speech Recognition 实例
-  let recognition: any = null
+  // MediaRecorder 实例
+  let mediaRecorder: MediaRecorder | null = null
+  let audioChunks: Blob[] = []
+  let stream: MediaStream | null = null
 
   /**
-   * 初始化 ASR
+   * 初始化录音器
    */
-  function initASR(): boolean {
-    // 检查浏览器支持
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+  async function initRecorder(): Promise<boolean> {
+    try {
+      stream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      mediaRecorder = new MediaRecorder(stream, {
+        mimeType: 'audio/webm;codecs=opus'
+      })
 
-    if (!SpeechRecognition) {
-      logger.error('浏览器不支持 Speech Recognition API')
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data)
+        }
+      }
+
+      mediaRecorder.onstop = async () => {
+        logger.info('录音结束，开始识别...')
+        asrState.value = 'processing'
+
+        try {
+          // 合并音频数据
+          const audioBlob = new Blob(audioChunks, { type: 'audio/webm' })
+          audioChunks = []
+
+          // 转换为 Base64
+          const base64Audio = await blobToBase64(audioBlob)
+
+          // 调用 ASR API
+          const result = await speechToText({
+            audio_data: base64Audio,
+            mime_type: 'audio/webm',
+            language: 'auto'
+          })
+
+          if (result.text) {
+            // 添加时间戳确保唯一性
+            transcript.value = `${result.text}__${Date.now()}`
+            logger.info('ASR 识别结果:', result.text)
+          }
+        } catch (error) {
+          logger.error('ASR 识别失败:', error)
+        } finally {
+          asrState.value = 'idle'
+        }
+      }
+
+      return true
+    } catch (error) {
+      logger.error('初始化录音器失败:', error)
       return false
     }
+  }
 
-    recognition = new SpeechRecognition()
-    recognition.lang = config.asrLanguage
-    recognition.continuous = false
-    recognition.interimResults = false
-
-    recognition.onstart = () => {
-      asrState.value = 'listening'
-      logger.info('ASR 开始监听')
-    }
-
-    recognition.onresult = (event: any) => {
-      const result = event.results[0][0].transcript
-      // 添加时间戳确保每次识别都是唯一的值
-      transcript.value = `${result}__${Date.now()}`
-      logger.info('ASR 识别结果:', result)
-    }
-
-    recognition.onerror = (event: any) => {
-      logger.error('ASR 错误:', event.error)
-      asrState.value = 'idle'
-    }
-
-    recognition.onend = () => {
-      asrState.value = 'idle'
-      logger.info('ASR 结束监听')
-    }
-
-    return true
+  /**
+   * Blob 转 Base64
+   */
+  function blobToBase64(blob: Blob): Promise<string> {
+    return new Promise((resolve, reject) => {
+      const reader = new FileReader()
+      reader.onloadend = () => {
+        const base64 = (reader.result as string).split(',')[1]
+        resolve(base64)
+      }
+      reader.onerror = reject
+      reader.readAsDataURL(blob)
+    })
   }
 
   /**
    * 开始语音识别
    */
-  function startListening(): void {
-    if (!recognition) {
-      if (!initASR()) return
+  async function startListening(): Promise<void> {
+    if (!mediaRecorder) {
+      const success = await initRecorder()
+      if (!success) return
     }
 
     transcript.value = ''
-    recognition.start()
+    audioChunks = []
+
+    try {
+      mediaRecorder!.start()
+      asrState.value = 'listening'
+      logger.info('开始录音...')
+    } catch (error) {
+      logger.error('开始录音失败:', error)
+    }
   }
 
   /**
    * 停止语音识别
    */
   function stopListening(): void {
-    if (recognition) {
-      recognition.stop()
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop()
+      logger.info('停止录音')
     }
   }
 
   /**
    * TTS 语音播报
+   * 使用小米 MiMo TTS API
    */
-  function speak(text: string): Promise<void> {
+  async function speak(text: string): Promise<void> {
+    try {
+      logger.info('TTS 播报:', text)
+
+      // 调用 TTS API
+      const audioBlob = await textToSpeech({
+        text,
+        voice: 'Chloe',
+        style: 'Bright, bouncy, slightly sing-song tone'
+      })
+
+      // 播放音频
+      const audioUrl = URL.createObjectURL(audioBlob)
+      const audio = new Audio(audioUrl)
+
+      return new Promise((resolve, reject) => {
+        audio.onended = () => {
+          URL.revokeObjectURL(audioUrl)
+          logger.info('TTS 播报完成')
+          resolve()
+        }
+
+        audio.onerror = (error) => {
+          URL.revokeObjectURL(audioUrl)
+          logger.error('TTS 播放失败:', error)
+          reject(error)
+        }
+
+        audio.play().catch(reject)
+      })
+    } catch (error) {
+      logger.error('TTS 请求失败:', error)
+      // 降级到浏览器原生 TTS
+      await speakFallback(text)
+    }
+  }
+
+  /**
+   * 降级 TTS（浏览器原生）
+   */
+  function speakFallback(text: string): Promise<void> {
     return new Promise((resolve, reject) => {
       if (!('speechSynthesis' in window)) {
-        logger.error('浏览器不支持 Speech Synthesis API')
-        reject(new Error('不支持TTS'))
+        reject(new Error('浏览器不支持 TTS'))
         return
       }
 
-      // 取消之前的播报
       window.speechSynthesis.cancel()
-
       const utterance = new SpeechSynthesisUtterance(text)
-      utterance.lang = config.asrLanguage
+      utterance.lang = 'zh-CN'
       utterance.rate = 1.0
       utterance.pitch = 1.0
 
-      // 尝试查找指定声音
-      const voices = window.speechSynthesis.getVoices()
-      const targetVoice = voices.find(v => v.name.includes(config.ttsVoiceName))
-      if (targetVoice) {
-        utterance.voice = targetVoice
-      }
-
-      utterance.onend = () => {
-        logger.info('TTS 播报完成:', text)
-        resolve()
-      }
-
-      utterance.onerror = (event) => {
-        logger.error('TTS 错误:', event)
-        reject(event)
-      }
+      utterance.onend = () => resolve()
+      utterance.onerror = reject
 
       window.speechSynthesis.speak(utterance)
     })
@@ -126,7 +189,6 @@ export function useVoice() {
 
   /**
    * 快通道指令检测
-   * 检测是否为本地可处理的简单指令
    */
   function detectFastCommand(text: string): string | null {
     const commands: Record<string, string[]> = {
@@ -144,12 +206,14 @@ export function useVoice() {
     return null
   }
 
-  // 组件卸载时清理
+  // 清理资源
   onUnmounted(() => {
-    if (recognition) {
-      recognition.abort()
+    if (mediaRecorder && mediaRecorder.state === 'recording') {
+      mediaRecorder.stop()
     }
-    window.speechSynthesis.cancel()
+    if (stream) {
+      stream.getTracks().forEach(track => track.stop())
+    }
   })
 
   return {

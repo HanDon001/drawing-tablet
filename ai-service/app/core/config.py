@@ -19,6 +19,13 @@ class AppSettings(BaseSettings):
     DASHSCOPE_API_KEY: str = Field(..., description="通义千问API密钥")
     LLM_MODEL: str = Field(default="qwen-plus", description="LLM模型名称")
 
+    # 小米 MiMo 配置
+    MIMO_API_KEY: str = Field(..., description="小米MiMo API密钥")
+    MIMO_API_BASE: str = Field(
+        default="https://api.xiaomimimo.com/v1",
+        description="小米MiMo API基础URL"
+    )
+
     # 日志配置
     LOG_LEVEL: str = Field(default="INFO", description="日志级别")
 
