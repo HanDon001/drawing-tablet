@@ -236,22 +236,14 @@
         },
 
         /**
-         * 增量识别结果
+         * 增量识别结果（普通模式：只显示，不执行）
          */
         _onPartialResult(text) {
             VC.State.emit('recognized', { text, isFinal: false });
-
-            // 预判执行快指令
-            const fastCmds = { '撤销': 'undo', '撤回': 'undo', '清空': 'clear', '停止': 'stop' };
-            const trimmed = text.trim();
-            if (fastCmds[trimmed]) {
-                console.log('[Voice] 预判执行:', trimmed);
-                VC.Cmd.processText(trimmed);
-            }
         },
 
         /**
-         * 最终识别结果
+         * 最终识别结果（普通模式：说完才执行）
          */
         _onFinalResult(text) {
             console.log('[Voice] ASR 最终结果:', text);
