@@ -62,6 +62,12 @@ async def agent_websocket(ws: WebSocket):
                     agent.update_canvas(objects)
                     logger.debug(f"画布同步: {len(objects)} 个对象")
 
+                elif msg_type == "mouse_target":
+                    # 鼠标选中目标（用于指代词解析）
+                    target = msg.get("target")
+                    agent.canvas.last_mouse_target = target
+                    logger.debug(f"鼠标目标: {target}")
+
                 elif msg_type == "stop":
                     # 停止 Agent
                     agent.stop()

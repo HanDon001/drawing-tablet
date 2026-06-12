@@ -432,6 +432,21 @@
             // 初始化语音服务
             await VC.Voice.init();
 
+            // 画布事件追踪 → 同步到 Agent
+            VC.State.on('objectsChange', () => {
+                if (agentRunning) {
+                    VC.AgentLoop._syncCanvas();
+                }
+            });
+
+            // 鼠标选中图形 → 更新指代目标
+            VC.State.on('selectionChange', () => {
+                const sel = VC.State.selectedObject;
+                if (sel && agentRunning) {
+                    VC.AgentLoop._setMouseTarget(sel.tag || sel.id);
+                }
+            });
+
             console.log('[App] VoiceCanvas 初始化完成');
         });
     </script>

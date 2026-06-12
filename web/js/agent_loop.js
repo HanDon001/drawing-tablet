@@ -358,6 +358,38 @@
                 ws.send(JSON.stringify({ type: 'text', text }));
                 addChatMessage('user', text);
             }
+        },
+
+        /**
+         * 设置鼠标目标（用于指代词解析："它"、"刚才那个"）
+         */
+        _setMouseTarget(id) {
+            if (ws?.readyState === WebSocket.OPEN) {
+                ws.send(JSON.stringify({ type: 'mouse_target', target: id }));
+            }
+        },
+
+        /**
+         * 增量 ASR 结果处理（预判执行）
+         * 返回 true 表示已预判执行，跳过后续处理
+         */
+        _onPartialASR(text) {
+            const trimmed = text.trim();
+
+            // 高置信度快指令 → 不等 final 直接执行
+            const fastCmds = {
+                '撤销': 'undo', '撤回': 'undo', '取消': 'undo',
+                '清空': 'clear', '清除': 'clear',
+                '停止': 'stop', '安静': 'stop',
+            };
+
+            if (fastCmds[trimmed]) {
+                console.log('[AgentLoop] 预判执行:', trimmed);
+                VC.Cmd.processText(trimmed);
+                return true;
+            }
+
+            return false;
         }
     };
 
