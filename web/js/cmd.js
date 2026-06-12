@@ -143,28 +143,109 @@
 
         /**
          * 处理文本指令
+         * 优先快通道，其余全部走 LLM 理解
          */
         async processText(text) {
-            // 检测快通道
+            // 聊天面板记录用户消息
+            if (typeof addChatMessage === 'function') addChatMessage('user', text);
+
+            // 快通道：本地直接执行
             const fastCmd = VC.Parser.detectFastCommand(text);
             if (fastCmd) {
+                let reply = '';
                 switch (fastCmd) {
-                    case 'undo': return this.undo();
-                    case 'clear': return this.clearAll();
-                    case 'delete': return this.deleteShape();
+                    case 'undo': this.undo(); reply = '已撤销'; break;
+                    case 'clear': this.clearAll(); reply = '已清空画布'; break;
+                    case 'delete': this.deleteShape(); reply = '已删除'; break;
                 }
+                if (reply) {
+                    if (typeof addChatMessage === 'function') addChatMessage('assistant', reply);
+                    if (VC.Voice) await VC.Voice.speak(reply);
+                }
+                return;
             }
 
-            // 慢通道解析
-            const intent = VC.Parser.parseIntent(text);
-            const result = this.executeIntent(intent);
+            // 慢通道：调用 LLM 理解意图
+            try {
+                if (typeof showTyping === 'function') showTyping();
 
-            // 语音播报
-            if (VC.Voice && intent.reply) {
-                await VC.Voice.speak(intent.reply);
+                const canvasCtx = this._buildCanvasContext();
+                const resp = await fetch(VC.Config.API_BASE + '/interpret', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, canvas_context: canvasCtx })
+                });
+                const data = await resp.json();
+
+                if (typeof hideTyping === 'function') hideTyping();
+
+                // 执行动作
+                if (data.actions && data.actions.length > 0) {
+                    for (const action of data.actions) {
+                        this._executeLLMAction(action);
+                    }
+                    VC.Canvas.render();
+                }
+
+                // 聊天面板记录 AI 回复
+                if (data.reply) {
+                    if (typeof addChatMessage === 'function') addChatMessage('assistant', data.reply);
+                    if (VC.Voice) await VC.Voice.speak(data.reply);
+                }
+            } catch (e) {
+                if (typeof hideTyping === 'function') hideTyping();
+                console.error('[Cmd] LLM 调用失败:', e);
+                const errMsg = '抱歉，我没太听清，你能再说一次吗？';
+                if (typeof addChatMessage === 'function') addChatMessage('assistant', errMsg);
+                if (VC.Voice) await VC.Voice.speak(errMsg);
             }
+        },
 
-            return result;
+        /**
+         * 构建画布上下文描述
+         */
+        _buildCanvasContext() {
+            const objs = VC.State.objects || [];
+            if (objs.length === 0) return '画布为空';
+
+            const posNames = { center: '中间', left_top: '左上角', right_top: '右上角', left_bottom: '左下角', right_bottom: '右下角' };
+            const shapeNames = { circle: '圆', rectangle: '方块', triangle: '三角形', line: '线', star: '星', diamond: '菱形', arrow: '箭头', hexagon: '六边形' };
+
+            return objs.map(o => {
+                const pos = posNames[o.position] || o.position;
+                const shape = shapeNames[o.shape] || o.shape;
+                const tag = o.tag ? `，叫"${o.tag}"` : '';
+                return `${pos}有${o.color}${shape}${tag}`;
+            }).join('；');
+        },
+
+        /**
+         * 执行 LLM 返回的动作
+         */
+        _executeLLMAction(action) {
+            const { tool, params } = action;
+            if (tool === 'draw_shape') {
+                const pos = VC.Canvas.parsePosition(params.position || 'center');
+                const size = VC.Canvas.parseSize(params.size || 'medium');
+                this.drawShape({
+                    shape: params.shape_type || 'circle',
+                    color: params.color || 'black',
+                    x: pos.x, y: pos.y,
+                    width: size.w, height: size.h,
+                    tag: params.tag
+                });
+            } else if (tool === 'edit_shape') {
+                const obj = (VC.State.objects || []).find(o => o.tag === params.target_tag || o.id === params.target_tag);
+                if (obj) {
+                    if (params.new_color) obj.color = params.new_color;
+                    if (params.new_size) { const s = VC.Canvas.parseSize(params.new_size); obj.width = s.w; obj.height = s.h; }
+                    if (params.new_position) { const p = VC.Canvas.parsePosition(params.new_position); obj.x = p.x; obj.y = p.y; }
+                    VC.State.emit('objectsChange');
+                }
+            } else if (tool === 'delete_shape') {
+                const idx = (VC.State.objects || []).findIndex(o => o.tag === params.target_tag || o.id === params.target_tag);
+                if (idx !== -1) { VC.State.objects.splice(idx, 1); VC.State.emit('objectsChange'); }
+            }
         }
     };
 
