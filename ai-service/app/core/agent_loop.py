@@ -209,61 +209,6 @@ class AgentLoop:
             text = text.replace(f"{{{k}}}", str(v))
         return text
 
-    async def run(self, ws):
-        """
-        永久循环主入口
-
-        Args:
-            ws: WebSocket 连接（前端）
-        """
-        self._ws = ws
-        self._running = True
-        self.last_activity = time.time()
-
-        # 开场白
-        greeting = self._pick("greeting")
-        if self.canvas.is_empty():
-            greeting += "画布是空的，告诉我你想画什么吧。"
-        else:
-            greeting += self.canvas.describe_for_user()
-
-        await self.send_speak(greeting)
-
-        # 主循环
-        while self._running:
-            try:
-                # 等待用户输入（带超时）
-                user_input = await self.wait_for_input(timeout=self.idle_timeout)
-
-                if user_input is None:
-                    # 超时：主动关怀
-                    await self.proactive_care()
-                    continue
-
-                # 处理输入
-                await self.process_input(user_input)
-                self.last_activity = time.time()
-
-            except asyncio.CancelledError:
-                break
-            except Exception as e:
-                logger.error(f"Agent 循环错误: {e}")
-                await self.send_speak(self._pick("error", reason="出了点小问题"))
-                continue
-
-        logger.info("Agent 循环已退出")
-
-    async def wait_for_input(self, timeout: float = 30) -> Optional[str]:
-        """等待用户输入（带超时）"""
-        try:
-            raw = await asyncio.wait_for(self._ws.receive_text(), timeout=timeout)
-            msg = json.loads(raw)
-            return msg.get("text", "")
-        except asyncio.TimeoutError:
-            return None
-        except Exception:
-            return None
-
     async def process_input(self, text: str):
         """处理用户输入"""
         self.state = "processing"

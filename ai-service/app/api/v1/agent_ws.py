@@ -23,69 +23,115 @@ async def agent_websocket(ws: WebSocket):
     """
     Agent 永久循环 WebSocket
 
-    协议:
-    - 客户端 → 服务端:
-        {"type": "text", "text": "画一个红色的圆"}     # 用户输入
-        {"type": "canvas", "objects": [...]}            # 画布状态同步
-        {"type": "stop"}                                # 停止 Agent
-
-    - 服务端 → 客户端:
-        {"type": "speak", "text": "好的，已画好"}       # 播报
-        {"type": "action", "action": {tool, params}}    # 执行动作
-        {"type": "state", "state": "idle|processing|speaking"}  # 状态变更
+    单一消息路由：所有前端消息统一进入队列，Agent 从队列消费
     """
     await ws.accept()
     logger.info("Agent WebSocket 已连接")
 
     agent = AgentLoop()
+    agent._ws = ws
+    agent._running = True
 
-    try:
-        # 启动 Agent 主循环
-        agent_task = asyncio.create_task(agent.run(ws))
+    # 消息队列：前端消息统一入队
+    message_queue = asyncio.Queue()
 
-        # 监听前端消息
-        while True:
-            try:
+    async def read_frontend():
+        """读取前端所有消息，入队"""
+        try:
+            while agent._running:
                 raw = await ws.receive_text()
                 msg = json.loads(raw)
+                await message_queue.put(msg)
+        except (WebSocketDisconnect, asyncio.CancelledError):
+            await message_queue.put({"type": "_disconnect"})
+        except Exception as e:
+            logger.error(f"前端消息读取错误: {e}")
+            await message_queue.put({"type": "_disconnect"})
+
+    async def agent_loop():
+        """Agent 主循环：从队列消费消息"""
+        import time
+
+        # 开场白
+        greeting = agent._pick("greeting")
+        if agent.canvas.is_empty():
+            greeting += "画布是空的，告诉我你想画什么吧。"
+        else:
+            greeting += agent.canvas.describe_for_user()
+        await agent.send_speak(greeting)
+
+        while agent._running:
+            try:
+                # 等待消息（带超时，用于主动关怀）
+                try:
+                    msg = await asyncio.wait_for(message_queue.get(), timeout=agent.idle_timeout)
+                except asyncio.TimeoutError:
+                    # 超时：主动关怀
+                    await agent.proactive_care()
+                    continue
+
                 msg_type = msg.get("type")
 
-                if msg_type == "text":
-                    # 用户输入 → 注入到 Agent
-                    # Agent 的 wait_for_input 会读取 WebSocket
-                    # 这里不需要额外处理，消息已经被 wait_for_input 读取
+                if msg_type == "_disconnect":
+                    break
+
+                elif msg_type == "text":
+                    # 用户文字输入
+                    text = msg.get("text", "")
+                    if text:
+                        await agent.process_input(text)
+                        agent.last_activity = time.time()
+
+                elif msg_type == "audio":
+                    # 语音数据（二进制，VAD 检测到的语音片段）
+                    # 暂存，等 silence_end 时一起发给 ASR
+                    pass
+
+                elif msg_type == "silence_end":
+                    # 用户说完一句话 → 发送给 Agent 处理
+                    # 此时可以从缓存的音频中提取文本
+                    # 简化处理：前端已经通过 ASR 得到文本，这里触发处理
                     pass
 
                 elif msg_type == "canvas":
                     # 画布状态同步
                     objects = msg.get("objects", [])
                     agent.update_canvas(objects)
-                    logger.debug(f"画布同步: {len(objects)} 个对象")
 
                 elif msg_type == "mouse_target":
-                    # 鼠标选中目标（用于指代词解析）
+                    # 鼠标选中目标
                     target = msg.get("target")
                     agent.canvas.last_mouse_target = target
-                    logger.debug(f"鼠标目标: {target}")
 
                 elif msg_type == "stop":
-                    # 停止 Agent
                     agent.stop()
                     break
 
-            except json.JSONDecodeError:
-                logger.warning("收到非 JSON 消息")
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Agent 循环错误: {e}")
+                await agent.send_speak(agent._pick("error", reason="出了点小问题"))
 
-    except WebSocketDisconnect:
-        logger.info("Agent WebSocket 客户端断开")
+    try:
+        # 并行运行：前端消息读取 + Agent 主循环
+        read_task = asyncio.create_task(read_frontend())
+        agent_task = asyncio.create_task(agent_loop())
+
+        done, pending = await asyncio.wait(
+            [read_task, agent_task],
+            return_when=asyncio.FIRST_COMPLETED,
+        )
+
+        for task in pending:
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+
     except Exception as e:
         logger.error(f"Agent WebSocket 错误: {e}")
     finally:
         agent.stop()
-        if not agent_task.done():
-            agent_task.cancel()
-            try:
-                await agent_task
-            except asyncio.CancelledError:
-                pass
         logger.info("Agent WebSocket 已关闭")
