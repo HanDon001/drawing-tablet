@@ -4,7 +4,7 @@
 """
 
 from typing import Optional
-from core.tool_registry import ToolRegistry
+from app.core.tool_registry import ToolRegistry
 
 
 @ToolRegistry.register("draw_shape")

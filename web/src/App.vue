@@ -134,11 +134,35 @@ async function handleSlowCommand(text: string): Promise<void> {
     // 执行动作
     if (response.actions && response.actions.length > 0) {
       for (const action of response.actions) {
-        if (engine) {
-          const objProps = engine.executeAction(action)
-          if (objProps) {
-            canvasStore.addObject(objProps as any)
+        if (!engine) continue
+
+        switch (action.tool) {
+          case 'draw_shape': {
+            const objProps = engine.executeDrawAction(action)
+            if (objProps) {
+              canvasStore.addObject(objProps as any)
+            }
+            break
           }
+
+          case 'edit_shape': {
+            const result = engine.executeEditAction(action, canvasStore.objects)
+            if (result) {
+              canvasStore.updateObject(result.id, result.updates)
+            }
+            break
+          }
+
+          case 'delete_shape': {
+            const id = engine.executeDeleteAction(action, canvasStore.objects)
+            if (id) {
+              canvasStore.removeObject(id)
+            }
+            break
+          }
+
+          default:
+            logger.warn('未知工具:', action.tool)
         }
       }
       renderCanvas()

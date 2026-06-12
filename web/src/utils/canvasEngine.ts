@@ -177,9 +177,9 @@ export class CanvasEngine {
   }
 
   /**
-   * 执行动作并返回新的对象属性
+   * 执行绘图动作并返回新的对象属性
    */
-  executeAction(action: Action): Partial<CanvasObject> | null {
+  executeDrawAction(action: Action): Partial<CanvasObject> | null {
     const { tool, params } = action
 
     switch (tool) {
@@ -200,8 +200,82 @@ export class CanvasEngine {
       }
 
       default:
-        console.warn('未知工具:', tool)
+        console.warn('未知绘图工具:', tool)
         return null
     }
+  }
+
+  /**
+   * 执行编辑动作
+   * @returns 更新的属性，如果未找到对象返回 null
+   */
+  executeEditAction(
+    action: Action,
+    objects: CanvasObject[]
+  ): { id: string; updates: Partial<CanvasObject> } | null {
+    const { tool, params } = action
+
+    if (tool !== 'edit_shape') {
+      console.warn('未知编辑工具:', tool)
+      return null
+    }
+
+    // 查找目标对象
+    const targetTag = params.target_tag as string
+    const target = objects.find(obj => obj.tag === targetTag)
+
+    if (!target) {
+      console.warn('未找到对象:', targetTag)
+      return null
+    }
+
+    // 构建更新
+    const updates: Partial<CanvasObject> = {}
+
+    if (params.new_color) {
+      updates.color = params.new_color as string
+    }
+
+    if (params.new_size) {
+      const size = this.parseSize(params.new_size as string)
+      updates.width = size.width
+      updates.height = size.height
+      updates.size = params.new_size as CanvasObject['size']
+    }
+
+    if (params.new_position) {
+      const position = this.parsePosition(params.new_position as string)
+      updates.x = position.x
+      updates.y = position.y
+      updates.position = params.new_position as string
+    }
+
+    return { id: target.id, updates }
+  }
+
+  /**
+   * 执行删除动作
+   * @returns 要删除的对象 ID，如果未找到返回 null
+   */
+  executeDeleteAction(
+    action: Action,
+    objects: CanvasObject[]
+  ): string | null {
+    const { tool, params } = action
+
+    if (tool !== 'delete_shape') {
+      console.warn('未知删除工具:', tool)
+      return null
+    }
+
+    const targetTag = params.target_tag as string
+    const target = objects.find(obj => obj.tag === targetTag)
+
+    if (!target) {
+      console.warn('未找到对象:', targetTag)
+      return null
+    }
+
+    return target.id
   }
 }

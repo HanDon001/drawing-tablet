@@ -3,7 +3,7 @@
 使用 @ToolRegistry.register 注册查询相关工具
 """
 
-from core.tool_registry import ToolRegistry
+from app.core.tool_registry import ToolRegistry
 
 
 @ToolRegistry.register("describe_canvas")

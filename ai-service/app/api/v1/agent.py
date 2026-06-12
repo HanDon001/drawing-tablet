@@ -8,7 +8,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 from loguru import logger
 
-from core.agent import agent_instance
+from app.core.agent import agent_instance
 
 router = APIRouter(prefix="/ai/v1", tags=["agent"])
 
