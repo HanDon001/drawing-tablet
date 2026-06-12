@@ -155,6 +155,10 @@ export class CanvasEngine {
    * 渲染单个对象
    */
   renderObject(obj: CanvasObject): void {
+    // 支持透明度（多模态反馈：半透明预览）
+    const prevAlpha = this.ctx.globalAlpha
+    this.ctx.globalAlpha = obj.opacity ?? 1
+
     switch (obj.shape) {
       case 'circle':
         this.drawCircle(obj.x, obj.y, obj.width / 2, obj.color)
@@ -166,6 +170,8 @@ export class CanvasEngine {
         this.drawTriangle(obj.x, obj.y, obj.width, obj.color)
         break
     }
+
+    this.ctx.globalAlpha = prevAlpha
   }
 
   /**

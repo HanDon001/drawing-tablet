@@ -222,9 +222,17 @@ async function handleSlowCommand(text: string): Promise<void> {
 
         switch (action.tool) {
           case 'draw_shape': {
-            const objProps = engine.executeDrawAction(action)
-            if (objProps) {
-              canvasStore.addObject(objProps as any)
+            // 第一层：即时视觉反馈（半透明预览）
+            const ghostProps = engine.executeDrawAction(action)
+            if (ghostProps) {
+              const ghostObj = canvasStore.addObject({ ...ghostProps as any, opacity: 0.4 })
+              renderCanvas()
+              statusText.value = '🎨 绘制中...'
+
+              // 第二层：正式渲染（短暂延迟模拟确认感）
+              await new Promise(r => setTimeout(r, 150))
+              canvasStore.updateObject(ghostObj.id, { opacity: 1 })
+              renderCanvas()
             }
             break
           }
@@ -284,8 +292,15 @@ watch(transcript, async (newText) => {
   const isFinal = parts[2] === 'final'
 
   if (!isFinal) {
-    // 增量结果：仅显示，不执行
+    // 增量结果：显示 + 预判执行
     statusText.value = `🎤 ${actualText}`
+
+    // 预判：高置信度快指令不等 final 直接执行
+    const fastCmd = detectFastCommand(actualText)
+    if (fastCmd) {
+      logger.info('预判执行快指令:', fastCmd)
+      await handleFastCommand(fastCmd)
+    }
     return
   }
 
