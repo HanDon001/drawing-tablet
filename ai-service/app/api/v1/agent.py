@@ -3,8 +3,10 @@ Agent API 路由
 处理语音指令的 /interpret 接口
 """
 
+import json
 from typing import Optional, List, Dict, Any
 from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import StreamingResponse
 from pydantic import BaseModel, Field
 from loguru import logger
 
@@ -74,6 +76,42 @@ async def interpret(request: InterpretRequest, http_request: Request):
             status_code=500,
             detail="处理指令时出错，请稍后重试"
         )
+
+
+@router.post("/interpret/stream")
+async def interpret_stream(request: InterpretRequest, http_request: Request):
+    """
+    流式处理用户语音指令 (SSE)
+
+    返回事件流:
+    - data: {"type": "actions", "actions": [...]}
+    - data: {"type": "tts_text", "text": "按句切分的文本"}
+    - data: {"type": "done"}
+    """
+    request_id = http_request.headers.get("X-Request-ID", "unknown")
+    logger.info(f"[{request_id}] 流式指令: text='{request.text}'")
+
+    async def event_generator():
+        try:
+            async for event in agent_instance.chat_stream(
+                text=request.text,
+                canvas_context=request.canvas_context,
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except Exception as e:
+            logger.error(f"[{request_id}] 流式处理错误: {str(e)}")
+            yield f"data: {json.dumps({'type': 'tts_text', 'text': '抱歉，处理指令时出错了'})}\n\n"
+            yield f"data: {json.dumps({'type': 'done'})}\n\n"
+
+    return StreamingResponse(
+        event_generator(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Request-ID": request_id,
+        },
+    )
 
 
 @router.get("/health")

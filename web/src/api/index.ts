@@ -68,10 +68,93 @@ export async function interpret(request: InterpretRequest): Promise<InterpretRes
 }
 
 /**
+ * 流式调用 AI 解释接口 (SSE)
+ */
+export async function* interpretStream(request: InterpretRequest): AsyncGenerator<InterpretResponse> {
+  const response = await fetch(`${config.aiApiBase}/interpret/stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(request),
+  })
+
+  if (!response.ok || !response.body) {
+    throw new Error(`SSE 请求失败: ${response.status}`)
+  }
+
+  const reader = response.body.getReader()
+  const decoder = new TextDecoder()
+  let buffer = ''
+
+  while (true) {
+    const { done, value } = await reader.read()
+    if (done) break
+
+    buffer += decoder.decode(value, { stream: true })
+    const lines = buffer.split('\n')
+    buffer = lines.pop() || ''
+
+    for (const line of lines) {
+      if (line.startsWith('data: ')) {
+        try {
+          yield JSON.parse(line.slice(6))
+        } catch {
+          // 忽略非 JSON
+        }
+      }
+    }
+  }
+}
+
+/**
  * 健康检查
  */
 export async function healthCheck(): Promise<{ status: string; service: string }> {
   const response = await apiClient.get('/health')
+  return response.data
+}
+
+// ===== 语音服务 API =====
+
+export interface ASRRequest {
+  audio_data: string  // Base64 编码的音频数据
+  mime_type?: string
+  language?: string
+}
+
+export interface ASRResponse {
+  text: string
+}
+
+export interface TTSRequest {
+  text: string
+  voice?: string
+  style?: string
+}
+
+/**
+ * 语音识别 (ASR)
+ */
+export async function speechToText(request: ASRRequest): Promise<ASRResponse> {
+  const response = await apiClient.post<ASRResponse>('/voice/asr', {
+    audio_data: request.audio_data,
+    mime_type: request.mime_type || 'audio/webm',
+    language: request.language || 'auto'
+  })
+  return response.data
+}
+
+/**
+ * 语音合成 (TTS)
+ * 返回音频 Blob
+ */
+export async function textToSpeech(request: TTSRequest): Promise<Blob> {
+  const response = await apiClient.post('/voice/tts', {
+    text: request.text,
+    voice: request.voice || 'Chloe',
+    style: request.style || 'Bright, bouncy, slightly sing-song tone'
+  }, {
+    responseType: 'blob'
+  })
   return response.data
 }
 

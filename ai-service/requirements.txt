@@ -4,15 +4,11 @@
 fastapi>=0.109.0
 uvicorn[standard]>=0.27.0
 
-# LLM相关
-langchain>=0.1.4
-langchain-community>=0.0.16
-dashscope>=1.11.0
+# LLM相关 (DashScope OpenAI兼容API)
+openai>=1.6.0
+websockets>=12.0
 
 # 配置与日志
 pydantic-settings>=2.1.0
 loguru>=0.7.2
 python-dotenv>=1.0.0
-
-# 工具
-langchainhub>=0.1.15

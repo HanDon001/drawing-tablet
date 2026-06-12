@@ -16,7 +16,7 @@ echo      Done.
 echo.
 
 echo [1/2] Starting Backend...
-start "Backend" cmd /k "cd /d %PROJECT_DIR%ai-service && D:\project\python.exe run.py"
+start "Backend" cmd /k "cd /d %PROJECT_DIR%ai-service && D:\Py\.venv\Scripts\python.exe run.py"
 echo      Backend: http://localhost:8000
 echo.
 

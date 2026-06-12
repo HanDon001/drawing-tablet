@@ -12,6 +12,8 @@ import traceback
 
 from .core.config import settings
 from .api.v1.agent import router as agent_router
+from .api.v1.voice import router as voice_router
+from .api.v1.voice_ws import router as voice_ws_router
 
 # 导入 Skills 模块，确保工具被注册到 ToolRegistry
 from .skills.draw import tools as draw_tools
@@ -27,6 +29,12 @@ async def lifespan(app: FastAPI):
     logger.info(f"📊 调试模式: {settings.DEBUG}")
     logger.info(f"🤖 LLM模型: {settings.LLM_MODEL}")
     logger.info(f"📝 日志级别: {settings.LOG_LEVEL}")
+
+    # TTS 缓存预热（后台执行，不阻塞启动）
+    import asyncio
+    from app.api.v1.voice import tts_warmup, WARMUP_PHRASES
+    logger.info(f"🔥 TTS 预热: {len(WARMUP_PHRASES)} 条高频回复")
+    asyncio.create_task(tts_warmup())
 
     yield
 
@@ -94,6 +102,8 @@ async def log_requests(request: Request, call_next):
 
 # 挂载路由
 app.include_router(agent_router)
+app.include_router(voice_router)
+app.include_router(voice_ws_router)
 
 
 @app.get("/")
