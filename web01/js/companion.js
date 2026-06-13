@@ -13,6 +13,7 @@
     const LISTENING_TIMEOUT = 10000  // LISTENING 状态超时时间
 
     let state = STATE.IDLE
+    let destroyed = false           // 修复3.1: stop() 后标志，防止已销毁上下文继续运行
     let proactiveTimer = null
     let listeningTimer = null
     let currentAudio = null
@@ -20,6 +21,7 @@
     let audioCtx = null
     let workletNode = null
     let mediaStream = null
+    let lastProcessedText = ''      // 修复3.2: 防止重复处理相同文本
 
     // 回调
     let onPartial = null
@@ -65,6 +67,10 @@
     function handleAudio(float32Array) {
         if (!ws || ws.readyState !== WebSocket.OPEN) return
         if (state === STATE.SPEAKING) return // 播报时不发音频，防回声
+        if (destroyed) return  // 修复3.1: 已销毁，不再处理
+
+        // 修复3.3: 收到音频时清除 proactiveTimer，防止 proactive 与用户语音同时到达
+        clearProactiveTimer()
 
         // 降采样到 16kHz
         const resampled = downsample(float32Array, actualSampleRate, TARGET_SAMPLE_RATE)
@@ -122,11 +128,19 @@
                 // 修复1: 收到用户语音时清除主动搭话定时器
                 clearProactiveTimer()
                 clearListeningTimeout()
+                // 修复3.1: 已销毁，不再处理
+                if (destroyed) break
                 // 修复3: SPEAKING 时忽略过期的 final
                 if (state === STATE.SPEAKING) {
                     console.log(`[Companion] 忽略过期 final (当前状态: ${state})`)
                     break
                 }
+                // 修复3.2: 去重，防止重复处理相同文本
+                if (msg.text && msg.text === lastProcessedText) {
+                    console.log(`[Companion] 忽略重复 final: '${msg.text}'`)
+                    break
+                }
+                lastProcessedText = msg.text
                 if (onFinal) onFinal(msg.text)
                 setState(STATE.PROCESSING)
                 break
@@ -197,6 +211,11 @@
     }
 
     function onSpeakEnd() {
+        // 修复3.1: 已销毁，不再处理状态变化
+        if (destroyed) {
+            console.log('[Companion] onSpeakEnd 忽略：已销毁')
+            return
+        }
         setState(STATE.IDLE)
         startProactiveTimer()
     }
@@ -335,6 +354,8 @@
         STATE,
 
         async start(callbacks = {}) {
+            destroyed = false  // 重置销毁标志
+            lastProcessedText = ''  // 重置去重标志
             onPartial = callbacks.onPartial || (() => {})
             onFinal = callbacks.onFinal || (() => {})
             onActions = callbacks.onActions || (() => {})
@@ -363,6 +384,7 @@
 
         stop() {
             console.log('[Companion] 停止陪伴模式')
+            destroyed = true  // 修复3.1: 标记已销毁，防止回调继续执行
             clearProactiveTimer()
             clearListeningTimeout()
             stopCurrentAudio()
