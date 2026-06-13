@@ -36,21 +36,44 @@
     }
 
     // ── 音频缓冲 + 发送 ──
-    // vad-processor 每帧发 128 samples (~2.67ms)，需要攒够再发，避免海量小包
-    let audioBuffer = []        // Float32 帧缓冲
-    let audioBufferSamples = 0  // 缓冲中的总采样数
-    const CHUNK_SAMPLES = 8000  // 约 400ms @ 16kHz（或 ~167ms @ 48kHz）
+    // vad-processor 每帧发 128 samples，需要攒够再发，避免海量小包
+    // 方案B：前端采集 → 降采样到 16kHz → 发送给 DashScope ASR
+    const TARGET_SAMPLE_RATE = 16000  // DashScope ASR 期望 16kHz
+    let actualSampleRate = 48000      // 实际采样率，启动时更新
+    let audioBuffer = []              // Float32 帧缓冲（已降采样）
+    let audioBufferSamples = 0        // 缓冲中的总采样数
+    const CHUNK_SAMPLES = 8000        // 目标采样率下的缓冲大小（500ms @ 16kHz）
     let audioSendCount = 0
+
+    // 降采样函数：srcRate → dstRate
+    function downsample(float32Array, srcRate, dstRate) {
+        if (srcRate === dstRate) return float32Array
+        const ratio = srcRate / dstRate
+        const newLength = Math.round(float32Array.length / ratio)
+        const result = new Float32Array(newLength)
+        for (let i = 0; i < newLength; i++) {
+            const srcIdx = i * ratio
+            const idx = Math.floor(srcIdx)
+            const frac = srcIdx - idx
+            result[i] = idx + 1 < float32Array.length
+                ? float32Array[idx] * (1 - frac) + float32Array[idx + 1] * frac
+                : float32Array[idx]
+        }
+        return result
+    }
 
     function handleAudio(float32Array) {
         if (!ws || ws.readyState !== WebSocket.OPEN) return
         if (state === STATE.SPEAKING) return // 播报时不发音频，防回声
 
-        // 攒缓冲
-        audioBuffer.push(float32Array)
-        audioBufferSamples += float32Array.length
+        // 降采样到 16kHz
+        const resampled = downsample(float32Array, actualSampleRate, TARGET_SAMPLE_RATE)
 
-        // 攒够了才发
+        // 攒缓冲
+        audioBuffer.push(resampled)
+        audioBufferSamples += resampled.length
+
+        // 攒够了才发（CHUNK_SAMPLES 基于目标采样率 16kHz）
         if (audioBufferSamples >= CHUNK_SAMPLES) {
             // 合并
             const merged = new Float32Array(audioBufferSamples)
@@ -62,16 +85,16 @@
             audioBuffer = []
             audioBufferSamples = 0
 
-            // Float32 → Int16
+            // Float32 → Int16（带削波保护）
             const int16 = new Int16Array(merged.length)
             for (let i = 0; i < merged.length; i++) {
                 const s = Math.max(-1, Math.min(1, merged[i]))
-                int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+                int16[i] = Math.max(-32768, Math.min(32767, Math.round(s * 32767)))
             }
             ws.send(int16.buffer)
             audioSendCount++
             if (audioSendCount % 10 === 1) {
-                console.log(`[Companion] 📤 已发送 ${audioSendCount} 块音频 (${int16.length} samples)`)
+                console.log(`[Companion] 📤 已发送 ${audioSendCount} 块音频 (${int16.length} samples @ ${TARGET_SAMPLE_RATE}Hz)`)
             }
         }
     }
@@ -240,8 +263,15 @@
         mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
         console.log('[Companion] 麦克风已获取')
 
-        audioCtx = new AudioContext()
-        console.log(`[Companion] AudioContext: ${audioCtx.sampleRate}Hz`)
+        // 尝试使用 16kHz，如果不支持则使用默认采样率
+        try {
+            audioCtx = new AudioContext({ sampleRate: TARGET_SAMPLE_RATE })
+        } catch (e) {
+            console.warn('[Companion] 不支持 16kHz，使用默认采样率')
+            audioCtx = new AudioContext()
+        }
+        actualSampleRate = audioCtx.sampleRate
+        console.log(`[Companion] AudioContext: ${actualSampleRate}Hz (目标: ${TARGET_SAMPLE_RATE}Hz)`)
 
         if (audioCtx.state === 'suspended') await audioCtx.resume()
 
@@ -265,7 +295,7 @@
                 case 'speech_end':
                     isSpeaking = false
                     console.log('[Companion] VAD: 人声结束')
-                    // 发送缓冲区中剩余的音频
+                    // 发送缓冲区中剩余的音频（已降采样）
                     if (audioBuffer.length > 0 && ws && ws.readyState === WebSocket.OPEN) {
                         const merged = new Float32Array(audioBufferSamples)
                         let offset = 0
@@ -275,13 +305,14 @@
                         }
                         audioBuffer = []
                         audioBufferSamples = 0
+                        // Float32 → Int16（带削波保护）
                         const int16 = new Int16Array(merged.length)
                         for (let i = 0; i < merged.length; i++) {
                             const s = Math.max(-1, Math.min(1, merged[i]))
-                            int16[i] = s < 0 ? s * 0x8000 : s * 0x7FFF
+                            int16[i] = Math.max(-32768, Math.min(32767, Math.round(s * 32767)))
                         }
                         ws.send(int16.buffer)
-                        console.log(`[Companion] 📤 flush 尾音 ${int16.length} samples`)
+                        console.log(`[Companion] 📤 flush 尾音 ${int16.length} samples @ ${TARGET_SAMPLE_RATE}Hz`)
                     }
                     // 通知后端语音结束，触发ASR识别
                     sendJSON({ action: 'speech_end' })
