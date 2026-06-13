@@ -129,6 +129,7 @@ class ASRSession:
         logger.info(f"[ASR-WS] session 已创建: {msg.get('session',{}).get('id','?')}")
 
         # session.update
+        # 方案B：禁用服务端 VAD，完全依赖客户端 VAD 控制 commit 时机
         await self.ws.send(json.dumps({
             "type": "session.update",
             "session": {
@@ -136,7 +137,7 @@ class ASRSession:
                 "instructions": "你是一个语音识别助手，只输出用户说话的文字内容。",
                 "input_audio_format": "pcm",
                 "input_audio_transcription": {"model": settings.ASR_MODEL},
-                "turn_detection": {"type": "server_vad"},
+                "turn_detection": {"type": "disabled"},  # 禁用服务端 VAD
             }
         }))
         raw = await asyncio.wait_for(self.ws.recv(), timeout=5.0)

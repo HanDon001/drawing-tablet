@@ -82,19 +82,26 @@ async def gateway_ws(ws: WebSocket):
         await send_json({"type": "final", "text": text})
         asyncio.create_task(process_text(text, canvas_context=last_canvas_context))
 
-    # 周期性commit任务：每1秒检查，用户停顿4秒后commit触发ASR识别
+    # 周期性commit任务：兜底机制，防止客户端 VAD 漏掉的情况
+    # 方案B：禁用服务端 VAD，主要依赖客户端 VAD 的 speech_end 触发 commit
+    committed_recently = False  # 标记最近是否已 commit
+
     async def periodic_commit():
-        nonlocal last_audio_time
+        nonlocal last_audio_time, committed_recently
         while True:
             await asyncio.sleep(1.0)
             # 如果正在处理LLM，跳过commit
             if processing:
                 continue
-            # 用户停顿4秒后commit，让ASR返回完整的final结果
-            if last_audio_time > 0 and (time.time() - last_audio_time) > 4.0:
+            # 如果最近已经由客户端 VAD 触发过 commit，跳过
+            if committed_recently:
+                committed_recently = False  # 重置标志
+                continue
+            # 兜底：用户停顿8秒后commit（比客户端 VAD 的 4 秒更长，避免冲突）
+            if last_audio_time > 0 and (time.time() - last_audio_time) > 8.0:
                 try:
                     await asr.commit()
-                    logger.info("[GW] 用户停顿4秒，commit触发识别")
+                    logger.info("[GW] 兜底: 用户停顿8秒，commit触发识别")
                 except Exception as e:
                     logger.warning(f"[GW] commit 失败: {e}")
                 last_audio_time = 0  # 重置，等待新的音频活动
@@ -124,7 +131,8 @@ async def gateway_ws(ws: WebSocket):
                     logger.debug(f"[GW] 指令: {action}")
 
                     if action == "speech_end":
-                        logger.info("[GW] speech_end → commit")
+                        logger.info("[GW] 客户端 VAD speech_end → commit")
+                        committed_recently = True  # 标记已 commit，防止 periodic_commit 重复
                         await asr.commit()
 
                     elif action == "proactive":
