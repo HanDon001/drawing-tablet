@@ -10,9 +10,11 @@
 
     const STATE = { IDLE: 'idle', LISTENING: 'listening', PROCESSING: 'processing', SPEAKING: 'speaking', PROACTIVE: 'proactive' }
     const PROACTIVE_TIMEOUT = 20000
+    const LISTENING_TIMEOUT = 10000  // LISTENING 状态超时时间
 
     let state = STATE.IDLE
     let proactiveTimer = null
+    let listeningTimer = null
     let currentAudio = null
     let ws = null
     let audioCtx = null
@@ -78,11 +80,30 @@
     function handleMessage(msg) {
         switch (msg.type) {
             case 'partial':
-                if (state !== STATE.SPEAKING) setState(STATE.LISTENING)
+                // 修复1: 收到用户语音时清除主动搭话定时器
+                clearProactiveTimer()
+                // 修复3: SPEAKING 和 PROCESSING 时忽略过期的 partial
+                if (state === STATE.SPEAKING || state === STATE.PROCESSING) {
+                    console.log(`[Companion] 忽略过期 partial (当前状态: ${state})`)
+                    break
+                }
+                // 进入 LISTENING 状态，重置超时定时器
+                if (state !== STATE.LISTENING) {
+                    setState(STATE.LISTENING)
+                    startListeningTimeout()
+                }
                 if (onPartial) onPartial(msg.text)
                 break
 
             case 'final':
+                // 修复1: 收到用户语音时清除主动搭话定时器
+                clearProactiveTimer()
+                clearListeningTimeout()
+                // 修复3: SPEAKING 时忽略过期的 final
+                if (state === STATE.SPEAKING) {
+                    console.log(`[Companion] 忽略过期 final (当前状态: ${state})`)
+                    break
+                }
                 if (onFinal) onFinal(msg.text)
                 setState(STATE.PROCESSING)
                 break
@@ -93,17 +114,22 @@
 
             case 'reply':
             case 'proactive_reply':
+                clearListeningTimeout()
                 if (onReply) onReply(msg.text)
                 setState(STATE.SPEAKING)
                 speakText(msg.text)
                 break
 
             case 'status':
-                if (msg.state === 'listening') setState(STATE.IDLE)
+                if (msg.state === 'listening') {
+                    clearListeningTimeout()
+                    setState(STATE.IDLE)
+                }
                 break
 
             case 'error':
                 console.error(`[Companion] 错误: ${msg.message}`)
+                clearListeningTimeout()
                 setState(STATE.IDLE)
                 break
         }
@@ -169,6 +195,21 @@
     }
     function clearProactiveTimer() {
         if (proactiveTimer) { clearTimeout(proactiveTimer); proactiveTimer = null }
+    }
+
+    // ── LISTENING 超时 ──
+    // 修复2: 防止 VAD 误判导致状态机卡在 LISTENING
+    function startListeningTimeout() {
+        clearListeningTimeout()
+        listeningTimer = setTimeout(() => {
+            if (state === STATE.LISTENING) {
+                console.warn('[Companion] LISTENING 超时，回退到 IDLE')
+                setState(STATE.IDLE)
+            }
+        }, LISTENING_TIMEOUT)
+    }
+    function clearListeningTimeout() {
+        if (listeningTimer) { clearTimeout(listeningTimer); listeningTimer = null }
     }
 
     // ── WebSocket ──
@@ -292,6 +333,7 @@
         stop() {
             console.log('[Companion] 停止陪伴模式')
             clearProactiveTimer()
+            clearListeningTimeout()
             stopCurrentAudio()
             stopMic()
             if (ws) { sendJSON({ action: 'stop' }); ws.close(); ws = null }
