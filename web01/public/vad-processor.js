@@ -16,9 +16,9 @@ class VADProcessor extends AudioWorkletProcessor {
     this.speaking = false
     this.silenceFrames = 0
     this.energyThreshold = 0.02    // 提高阈值，过滤环境噪音
-    // hangover 时间 1.5秒，平衡换气保护和响应速度
-    // 48kHz / 128 samples = 375 帧/秒，1.5秒 = 562帧
-    this.hangoverFrames = 562      // 静音后继续发 1.5秒
+    // hangover 时间 0.6秒，快速响应
+    // 48kHz / 128 samples = 375 帧/秒，0.6秒 = 225帧
+    this.hangoverFrames = 225      // 静音后继续发 0.6秒
     this.frameCount = 0
     this.debugSent = false
   }

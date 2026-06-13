@@ -13,7 +13,7 @@
     let selectedObjId = null;
     let isResizing = false, resizeHandle = null;
     let currentBrushColor = '#333333', currentSize = 'medium', currentOpacity = 1;
-    let currentPosition = 'center', currentDrawTool = 'pen', brushSize = 3;
+    let currentPosition = 'center', currentDrawTool = 'select', brushSize = 3;
     let isDrawing = false, lastX = 0, lastY = 0;
     let isDragging = false, dragTarget = null, dragOffsetX = 0, dragOffsetY = 0;
     let resizeStartX = 0, resizeStartY = 0, resizeStartSize = 0;
@@ -82,6 +82,9 @@
 
     /* ========== 鼠标事件 ========== */
     function onMouseDown(e) {
+        // 中键或空格+左键交给 viewport 处理平移
+        if (e.button === 1 || (e.button === 0 && VC.Viewport && VC.Viewport.spacePressed)) return;
+
         const sx = e.offsetX, sy = e.offsetY;
         const pos = screenToCanvas(sx, sy);
         const x = pos.x, y = pos.y;
@@ -183,6 +186,9 @@
     }
 
     function onMouseMove(e) {
+        // 平移模式下跳过形状交互
+        if (VC.Viewport && VC.Viewport.isPanning && VC.Viewport.isPanning()) return;
+
         const sx = e.offsetX, sy = e.offsetY;
         const pos = screenToCanvas(sx, sy);
         const x = pos.x, y = pos.y;
@@ -217,8 +223,8 @@
         }
 
         if (isDragging && dragTarget) {
-            dragTarget.x = Math.max(0, Math.min(1, (x - dragOffsetX) / csize.w));
-            dragTarget.y = Math.max(0, Math.min(1, (y - dragOffsetY) / csize.h));
+            dragTarget.x = (x - dragOffsetX) / csize.w;
+            dragTarget.y = (y - dragOffsetY) / csize.h;
             redrawAll(); return;
         }
 

@@ -112,9 +112,10 @@
                 y: obj.y !== undefined ? obj.y : undefined,
                 position: obj.position || 'center',
                 opacity: obj.opacity || 1,
-                strokeColor: obj.strokeColor || '#1F2937',  // 默认黑色边框
+                strokeColor: obj.strokeColor || '无',  // 默认无边框
                 strokeWidth: obj.strokeWidth || 2,
                 tag: obj.tag || null,
+                rotation: obj.rotation || 0,  // 旋转角度(度)
                 createdAt: Date.now()
             };
             this.objects.push(newObj);
@@ -165,18 +166,22 @@
         },
 
         /**
-         * 生成画布上下文描述
+         * 生成画布上下文描述（精确版）
          */
         toContextString() {
             if (this.objects.length === 0) return '画布为空';
 
-            return this.objects.map(obj => {
-                const posLabel = VC.Config.POSITION_MAP[obj.position]?.label || '中';
-                const sizeLabel = obj.size === 'small' ? '小' : obj.size === 'large' ? '大' : '';
+            return this.objects.map((obj, i) => {
                 const shapeLabel = VC.Config.SHAPE_NAMES[obj.shape] || obj.shape;
-                const tagInfo = obj.tag ? `，叫做"${obj.tag}"` : '';
-                return `画布${posLabel}有一个${obj.color}${sizeLabel}${shapeLabel}${tagInfo}`;
-            }).join('；');
+                const tag = obj.tag ? `"${obj.tag}"` : `#${i + 1}`;
+                const x = obj.x !== undefined ? obj.x.toFixed(3) : (VC.Config.POSITION_MAP[obj.position]?.x || 0.5).toFixed(3);
+                const y = obj.y !== undefined ? obj.y.toFixed(3) : (VC.Config.POSITION_MAP[obj.position]?.y || 0.5).toFixed(3);
+                const size = typeof obj.size === 'number' ? `${obj.size}px` : (obj.size || 'medium');
+                const color = obj.color || '无填充';
+                const stroke = obj.stroke && obj.stroke !== 'none' ? `描边${obj.stroke}` : '';
+                const rot = obj.rotation ? `旋转${obj.rotation}°` : '';
+                return `[${tag}] ${shapeLabel}(${x},${y}) ${size} ${color} ${stroke} ${rot}`.trim();
+            }).join('\n');
         }
     };
 

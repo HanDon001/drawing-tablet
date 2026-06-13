@@ -92,18 +92,78 @@
     }
 
     function drawShape(ctx, obj) {
-        ctx.save(); ctx.globalAlpha = obj.opacity || 1;
+        ctx.save();
+        ctx.globalAlpha = obj.opacity !== undefined ? obj.opacity : 1;
+        // Figma 级别渲染质量
+        ctx.lineJoin = 'round';
+        ctx.lineCap = 'round';
+        ctx.imageSmoothingEnabled = true;
+        ctx.imageSmoothingQuality = 'high';
+
+        // 矢量图形渲染 (Path2D)
+        if (obj.type === 'vector' && obj.pathData) {
+            const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800;
+            const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600;
+            const x = obj.x !== undefined ? obj.x * canvasW : canvasW * 0.5;
+            const y = obj.y !== undefined ? obj.y * canvasH : canvasH * 0.5;
+            const rot = (obj.rotation || 0) * Math.PI / 180;
+
+            ctx.translate(x, y);
+            if (rot) ctx.rotate(rot);
+
+            // AI 矢量图：精确缩放 + 居中
+            if (obj._vectorArt && obj.scale) {
+                const s = obj.scale;
+                const minX = obj._minX || 0;
+                const minY = obj._minY || 0;
+                const srcW = obj._srcW || 512;
+                const srcH = obj._srcH || 512;
+                // 先缩放，再平移到中心
+                ctx.scale(s, s);
+                ctx.translate(-minX - srcW / 2, -minY - srcH / 2);
+            }
+
+            const fillColor = obj.fill || obj.color;
+            const strokeColor = obj.stroke || obj.strokeColor;
+            const hasFill = fillColor && fillColor !== 'none' && fillColor !== 'transparent';
+
+            ctx.fillStyle = hasFill ? fillColor : 'transparent';
+            ctx.strokeStyle = (strokeColor && strokeColor !== 'none') ? strokeColor : 'transparent';
+            ctx.lineWidth = obj.strokeWidth || 2;
+
+            if (hasFill) ctx.fill(obj.pathData);
+            if (ctx.strokeStyle !== 'transparent') ctx.stroke(obj.pathData);
+
+            // 选中状态：控制点
+            const selectedObjId = VC.State ? VC.State.selectedObjectId : null;
+            if (obj.id === selectedObjId) {
+                const s = obj.size || 80;
+                drawResizeHandles(ctx, 0, 0, s, 'circle');
+            }
+
+            ctx.restore();
+            return;
+        }
+
         const fillColor = obj.fill || obj.color;
         ctx.fillStyle = (fillColor && fillColor !== 'none') ? fillColor : 'transparent';
         const strokeColor = obj.stroke || obj.strokeColor;
         ctx.strokeStyle = (strokeColor && strokeColor !== 'none') ? strokeColor : 'transparent';
         ctx.lineWidth = obj.strokeWidth || 2;
+
+        // Figma 风格：有填充时添加微妙阴影
+        const hasFill = fillColor && fillColor !== 'none' && fillColor !== 'transparent';
+        if (hasFill && obj.shape !== 'line') {
+            ctx.shadowColor = 'rgba(0,0,0,0.08)';
+            ctx.shadowBlur = 4;
+            ctx.shadowOffsetX = 0;
+            ctx.shadowOffsetY = 2;
+        }
         const s = resolveSize(obj.size);
         const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800;
         const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600;
         const x = obj.x !== undefined ? obj.x * canvasW : canvasW * (POSITIONS[obj.position] || POSITIONS.center)[0];
         const y = obj.y !== undefined ? obj.y * canvasH : canvasH * (POSITIONS[obj.position] || POSITIONS.center)[1];
-        const hasFill = fillColor && fillColor !== 'none' && fillColor !== 'transparent';
         const rot = (obj.rotation || 0) * Math.PI / 180;
         ctx.translate(x, y);
         if (rot) ctx.rotate(rot);
@@ -131,6 +191,11 @@
             case 'arrow': ctx.beginPath(); ctx.moveTo(ox - s / 2, oy); ctx.lineTo(ox + s / 3, oy); ctx.lineTo(ox + s / 3, oy - s / 5); ctx.lineTo(ox + s / 2, oy); ctx.lineTo(ox + s / 3, oy + s / 5); ctx.lineTo(ox + s / 3, oy); ctx.stroke(); break;
             case 'hexagon': drawPolygon(ctx, ox, oy, s / 2, 6); if (hasFill) ctx.fill(); ctx.stroke(); break;
         }
+        // 清除阴影，避免影响后续绘制
+        ctx.shadowColor = 'transparent';
+        ctx.shadowBlur = 0;
+        ctx.shadowOffsetX = 0;
+        ctx.shadowOffsetY = 0;
         // 选中状态：控制点 + 旋转手柄
         const selectedObjId = VC.State ? VC.State.selectedObjectId : null;
         if (obj.id === selectedObjId) {

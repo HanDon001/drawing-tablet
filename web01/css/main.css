@@ -943,6 +943,7 @@
             flex-direction: column;
             align-items: center;
             gap: 0;
+            pointer-events: auto;
         }
 
         .ai-text-bubble {
@@ -982,7 +983,10 @@
 
         .ai-viz-canvas {
             position: absolute;
-            inset: 0;
+            top: 0;
+            left: 0;
+            width: 200px;
+            height: 200px;
         }
 
         .ai-avatar-btn {
@@ -1099,22 +1103,7 @@
         }
 
         .ai-mode-label {
-            font-size: 10px;
-            font-weight: 600;
-            letter-spacing: 0.12em;
-            margin-top: 6px;
-            display: none;
-            text-transform: uppercase;
-            background: var(--rainbow);
-            background-size: 300% 100%;
-            -webkit-background-clip: text;
-            -webkit-text-fill-color: transparent;
-            background-clip: text;
-            animation: rainbowFlow 4s linear infinite;
-        }
-
-        .ai-mode-label.active {
-            display: block;
+            display: none !important;
         }
 
         .ai-mode-label .dot {
@@ -1390,9 +1379,10 @@
 
         body.ai-mode .mode-indicator,
         body.multi-mode .mode-indicator {
-            background: rgba(255, 255, 255, 0.85);
-            border: 1px solid rgba(0, 0, 0, 0.06);
-            box-shadow: 0 2px 12px rgba(0, 0, 0, 0.06);
+            background: transparent;
+            border: none;
+            box-shadow: none;
+            display: none;
         }
 
         .mode-tag {

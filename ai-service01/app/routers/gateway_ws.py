@@ -97,8 +97,8 @@ async def gateway_ws(ws: WebSocket):
             if committed_recently:
                 committed_recently = False  # 重置标志
                 continue
-            # 兜底：用户停顿8秒后commit（比客户端 VAD 的 4 秒更长，避免冲突）
-            if last_audio_time > 0 and (time.time() - last_audio_time) > 8.0:
+            # 兜底：用户停顿3秒后commit
+            if last_audio_time > 0 and (time.time() - last_audio_time) > 3.0:
                 try:
                     await asr.commit()
                     logger.info("[GW] 兜底: 用户停顿8秒，commit触发识别")

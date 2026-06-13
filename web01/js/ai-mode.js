@@ -112,6 +112,83 @@
         VC.Chat.addChat('assistant', 'AI 陪伴模式已关闭，回到标准模式。');
     }
 
+    /* ========== AI 右键菜单 ========== */
+    let aiPaused = false;
+
+    function showAIContextMenu(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        const menu = document.getElementById('aiCtxMenu');
+        if (!menu) return;
+        // 更新暂停/恢复文字
+        const pauseItem = document.getElementById('aiCtxPause');
+        if (pauseItem) {
+            pauseItem.innerHTML = aiPaused
+                ? '<i class="fas fa-play" style="color:#22C55E;"></i> 恢复聆听'
+                : '<i class="fas fa-pause" style="color:#F59E0B;"></i> 暂停聆听';
+        }
+        menu.classList.add('visible');
+        let mx = e.clientX, my = e.clientY;
+        const rect = menu.getBoundingClientRect();
+        if (mx + rect.width > window.innerWidth) mx = window.innerWidth - rect.width - 8;
+        if (my + rect.height > window.innerHeight) my = window.innerHeight - rect.height - 8;
+        menu.style.left = mx + 'px';
+        menu.style.top = my + 'px';
+    }
+
+    function closeAIContextMenu() {
+        const menu = document.getElementById('aiCtxMenu');
+        if (menu) menu.classList.remove('visible');
+    }
+
+    function toggleAIPause() {
+        closeAIContextMenu();
+        if (VC.Companion) {
+            if (aiPaused) {
+                VC.Companion.start({
+                    onPartial: (text) => { showAITextBubble('🎤 ' + text); },
+                    onFinal: (text) => { showAITextBubble(text); VC.Chat.addChat('user', text); },
+                    onActions: async (actions) => {
+                        if (VC.Cmd && VC.Cmd.executeActions) await VC.Cmd.executeActions(actions);
+                        else if (VC.Cmd) { for (const a of actions) VC.Cmd.execute(a); }
+                        VC.CanvasInteraction.redrawAll();
+                    },
+                    onReply: (text) => { showAITextBubble(text); VC.Chat.addChat('assistant', text); },
+                    onStateChange: (newState) => {
+                        switch (newState) {
+                            case 'idle': showAITextBubble('正在聆听...'); break;
+                            case 'listening': showAITextBubble('🎤 听到你在说话...'); break;
+                            case 'processing': showAITextBubble('🧠 思考中...'); break;
+                            case 'proactive': showAITextBubble('💭 让我想想...'); break;
+                        }
+                    },
+                });
+                aiPaused = false;
+                showAITextBubble('正在聆听...');
+                VC.Chat.addChat('assistant', 'AI 画伴已恢复聆听。');
+            } else {
+                VC.Companion.stop();
+                aiPaused = true;
+                showAITextBubble('⏸️ 已暂停');
+                VC.Chat.addChat('assistant', 'AI 画伴已暂停。右键头像可恢复。');
+            }
+        }
+    }
+
+    function stopAIMode() {
+        closeAIContextMenu();
+        aiPaused = false;
+        deactivateAIMode();
+    }
+
+    // 点击其他地方关闭菜单
+    document.addEventListener('click', (e) => {
+        if (!e.target.closest('#aiCtxMenu') && !e.target.closest('#aiAvatarBtn')) {
+            closeAIContextMenu();
+        }
+    });
+    document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeAIContextMenu(); });
+
     /* ========== 多模态模式 ========== */
     async function activateMultiModal() {
         currentMode = 'multi';
@@ -157,6 +234,8 @@
         activateAIMode, deactivateAIMode,
         activateMultiModal, deactivateMultiModal,
         showAITextBubble, toggleVoiceInAIMode,
+        showAIContextMenu, closeAIContextMenu,
+        toggleAIPause, stopAIMode,
         get currentMode() { return currentMode; },
         get isAIListening() { return isAIListening; },
         set isAIListening(v) { isAIListening = v; }
@@ -169,6 +248,9 @@
     window.deactivateMultiModal = deactivateMultiModal;
     window.showAITextBubble = showAITextBubble;
     window.toggleVoiceInAIMode = toggleVoiceInAIMode;
+    window.showAIContextMenu = showAIContextMenu;
+    window.toggleAIPause = toggleAIPause;
+    window.stopAIMode = stopAIMode;
 
     console.log('[AIMode] AI 模式模块加载完成');
 })();

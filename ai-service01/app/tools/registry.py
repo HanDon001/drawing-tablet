@@ -12,12 +12,15 @@ class ToolRegistry:
     _schemas: Dict[str, dict] = {}
 
     @classmethod
-    def register(cls, name: str = None, description: str = ""):
+    def register(cls, name: str = None, description: str = "",
+                 param_descriptions: dict = None, param_enums: dict = None):
         def decorator(func):
             tool_name = name or func.__name__
             cls._tools[tool_name] = func
             cls._descriptions[tool_name] = description or func.__doc__ or tool_name
-            cls._schemas[tool_name] = cls._build_schema(tool_name, func, description)
+            cls._schemas[tool_name] = cls._build_schema(
+                tool_name, func, description, param_descriptions or {}, param_enums or {}
+            )
             return func
         return decorator
 
@@ -41,17 +44,21 @@ class ToolRegistry:
         return list(cls._tools.keys())
 
     @classmethod
-    def _build_schema(cls, name: str, func: Callable, description: str) -> dict:
+    def _build_schema(cls, name, func, description, param_descs, param_enums):
         sig = inspect.signature(func)
         params = {}
         type_map = {str: "string", int: "integer", float: "number", bool: "boolean"}
 
-        for param_name, param in sig.parameters.items():
-            param_type = type_map.get(param.annotation, "string")
-            param_info = {"type": param_type}
+        for pname, param in sig.parameters.items():
+            ptype = type_map.get(param.annotation, "string")
+            info: Dict[str, Any] = {"type": ptype}
+            if pname in param_descs:
+                info["description"] = param_descs[pname]
+            if pname in param_enums:
+                info["enum"] = param_enums[pname]
             if param.default is not inspect.Parameter.empty:
-                param_info["default"] = param.default
-            params[param_name] = param_info
+                info["default"] = param.default
+            params[pname] = info
 
         return {
             "type": "function",
@@ -61,7 +68,8 @@ class ToolRegistry:
                 "parameters": {
                     "type": "object",
                     "properties": params,
-                    "required": [p for p, v in sig.parameters.items() if v.default is inspect.Parameter.empty],
+                    "required": [p for p, v in sig.parameters.items()
+                                 if v.default is inspect.Parameter.empty],
                 },
             },
         }

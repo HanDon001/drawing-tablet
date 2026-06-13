@@ -164,7 +164,7 @@
                 ctx.globalAlpha = 0.06 + Math.sin(t + i) * 0.02; ctx.lineWidth = 1;
                 ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI * 2); ctx.stroke();
             }
-            const isAIListening = VC.AIMode ? VC.AIMode.isAIListening() : false;
+            const isAIListening = VC.AIMode ? VC.AIMode.isAIListening : false;
             for (let i = 0; i < 36; i++) {
                 const angle = (Math.PI * 2 / 36) * i + t * 0.5, innerR = 40;
                 const waveLen = 15 + Math.sin(t * 2 + i * 0.5) * 8 + (isAIListening ? Math.sin(t * 3 + i) * 10 : 0);

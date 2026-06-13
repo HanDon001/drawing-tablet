@@ -37,7 +37,7 @@
         };
         recognition.onerror = () => stopListening();
         recognition.onend = () => {
-            if (isListening || (VC.AIMode && VC.AIMode.isAIListening())) {
+            if (isListening || (VC.AIMode && VC.AIMode.isAIListening)) {
                 try { recognition.start(); } catch (e) { }
             }
         };

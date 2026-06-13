@@ -194,31 +194,28 @@
         },
 
         /**
-         * TTS 播报
+         * TTS 播报 — 始终优先使用 MiMo TTS，不等待播放完成（fire-and-forget）
          */
         async speak(text) {
             console.log(`[Voice] TTS: '${text}'`);
             try {
-                if (VC.State.backendAvailable) {
-                    const resp = await fetch(VC.Config.API_BASE + '/voice/tts', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text, voice: 'Chloe' })
-                    });
-                    if (resp.ok) {
-                        const blob = await resp.blob();
-                        const url = URL.createObjectURL(blob);
-                        const audio = new Audio(url);
-                        await new Promise((resolve) => {
-                            audio.onended = () => { URL.revokeObjectURL(url); resolve(); };
-                            audio.onerror = () => { URL.revokeObjectURL(url); resolve(); };
-                            audio.play().catch(() => resolve());
-                        });
-                        return;
-                    }
+                const resp = await fetch(VC.Config.API_BASE + '/voice/tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, voice: 'Chloe' }),
+                    signal: AbortSignal.timeout(8000)
+                });
+                if (resp.ok) {
+                    const blob = await resp.blob();
+                    const url = URL.createObjectURL(blob);
+                    const audio = new Audio(url);
+                    audio.onended = () => URL.revokeObjectURL(url);
+                    audio.onerror = () => URL.revokeObjectURL(url);
+                    audio.play().catch(() => {});
+                    return; // 不等待播放完成，立即返回
                 }
             } catch (e) {
-                console.warn('[Voice] TTS 失败:', e);
+                console.warn('[Voice] MiMo TTS 失败，降级浏览器TTS:', e);
             }
             this._speakFallback(text);
         },

@@ -231,21 +231,22 @@
                     style="border:3px solid #E69F56;border-top-color:transparent;"></div>
                 <p class="text-sm font-medium" style="color:#9B6A3A;">AI 正在创作中...</p>
             </div>
-            <div class="flex flex-col items-center mt-4 relative">
-                <div class="h-6 mb-2 flex items-center" id="normalTranscript">
+            <div class="flex flex-col items-center absolute bottom-4 left-1/2 z-20 pointer-events-none" style="transform:translateX(-50%);width:fit-content;">
+                <div class="h-6 mb-2 flex items-center" id="normalTranscript" style="pointer-events:auto;">
                     <span id="transcriptText"
                         class="opacity-0 transition-opacity duration-300 px-3 py-0.5 rounded-full text-xs"
                         style="background:rgba(232,217,199,0.3);"></span>
                 </div>
                 <button id="micBtn"
-                    class="w-14 h-14 rounded-full text-white text-xl flex items-center justify-center shadow-lg transition-all duration-300 focus:outline-none relative z-10">
+                    class="w-14 h-14 rounded-full text-white text-xl flex items-center justify-center shadow-lg transition-all duration-300 focus:outline-none relative z-10"
+                    style="pointer-events:auto;">
                     <i class="fas fa-microphone"></i>
                 </button>
                 <div class="ai-control-area" id="aiControlArea" style="display:none;">
                     <div class="ai-text-bubble" id="aiTextBubble"><span id="aiTranscriptText">正在聆听...</span></div>
                     <div class="ai-viz-wrap" id="aiVizWrap">
                         <canvas id="vizCanvas" class="ai-viz-canvas" width="400" height="400"></canvas>
-                        <button class="ai-avatar-btn" id="aiAvatarBtn" onclick="toggleVoiceInAIMode()"><i
+                        <button class="ai-avatar-btn" id="aiAvatarBtn" onclick="toggleVoiceInAIMode()" oncontextmenu="showAIContextMenu(event)"><i
                                 class="fas fa-robot"></i></button>
                     </div>
                     <div class="ai-mode-label" id="aiModeLabel"><span class="dot"></span>AI 陪伴中</div>
@@ -317,19 +318,12 @@
                     <div class="menu-card-title">语音绘图</div>
                     <div class="menu-card-desc">用语音描述图形，AI 实时绘制</div>
                 </div>
-                <div class="menu-card" onclick="launchModule('theme')">
+                <div class="menu-card" onclick="launchModule('vector-draw')">
                     <div class="menu-card-icon"
-                        style="background:linear-gradient(135deg,#DCFCE7,#BBF7D0);color:#16A34A;"><i
-                            class="fas fa-leaf"></i></div>
-                    <div class="menu-card-title">主题创作</div>
-                    <div class="menu-card-desc">选择主题，AI 自动生成画面</div>
-                </div>
-                <div class="menu-card" onclick="launchModule('describe')">
-                    <div class="menu-card-icon"
-                        style="background:linear-gradient(135deg,#DBEAFE,#BFDBFE);color:#2563EB;"><i
-                            class="fas fa-eye"></i></div>
-                    <div class="menu-card-title">画面描述</div>
-                    <div class="menu-card-desc">AI 识别画布内容并播报</div>
+                        style="background:linear-gradient(135deg,#E0E7FF,#C7D2FE);color:#4F46E5;"><i
+                            class="fas fa-bezier-curve"></i></div>
+                    <div class="menu-card-title">矢量画图</div>
+                    <div class="menu-card-desc">AI 绘制矢量图形，无损缩放</div>
                 </div>
                 <div class="menu-card" onclick="launchModule('optimize')">
                     <div class="menu-card-icon"
@@ -387,6 +381,14 @@
         <div class="ctx-menu-divider"></div>
         <div class="ctx-menu-item" onclick="ctxMenuDuplicate()"><i class="fas fa-copy" style="color:#3B82F6;"></i> 复制</div>
         <div class="ctx-menu-item danger" onclick="ctxMenuDelete()"><i class="fas fa-trash"></i> 删除</div>
+    </div>
+
+    <!-- AI 头像右键菜单 -->
+    <div class="ctx-menu" id="aiCtxMenu">
+        <div class="ctx-menu-header"><i class="fas fa-robot" style="color:#7C3AED;"></i> AI 画伴</div>
+        <div class="ctx-menu-item" id="aiCtxPause" onclick="toggleAIPause()"><i class="fas fa-pause" style="color:#F59E0B;"></i> 暂停聆听</div>
+        <div class="ctx-menu-divider"></div>
+        <div class="ctx-menu-item danger" onclick="stopAIMode()"><i class="fas fa-stop"></i> 停止 AI 模式</div>
     </div>
 
     <!-- VC 框架 (核心模块) -->

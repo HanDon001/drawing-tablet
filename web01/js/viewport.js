@@ -61,6 +61,20 @@
         },
 
         /**
+         * 是否正在平移
+         */
+        isPanning() {
+            return isPanning;
+        },
+
+        /**
+         * 空格键是否按下
+         */
+        get spacePressed() {
+            return spacePressed;
+        },
+
+        /**
          * 调整尺寸
          */
         resize() {
@@ -425,8 +439,8 @@
                 this._zoomAt(sx, sy, viewScale * delta);
             }, { passive: false });
 
-            // 鼠标移动
-            container.addEventListener('mousemove', (e) => {
+            // 鼠标移动（容器内）
+            const onMouseMove = (e) => {
                 const rect = canvasEl.getBoundingClientRect();
                 mouseScreenX = e.clientX - rect.left;
                 mouseScreenY = e.clientY - rect.top;
@@ -439,10 +453,12 @@
                 if (isPanning) {
                     viewOffsetX = panOffsetStartX + (mouseScreenX - panStartX);
                     viewOffsetY = panOffsetStartY + (mouseScreenY - panStartY);
+                    if (typeof redrawAll === 'function') redrawAll();
                 }
 
                 this._updateUI();
-            });
+            };
+            container.addEventListener('mousemove', onMouseMove);
 
             // 鼠标按下（中键或空格+左键）
             container.addEventListener('mousedown', (e) => {
@@ -454,20 +470,24 @@
                     panOffsetStartX = viewOffsetX;
                     panOffsetStartY = viewOffsetY;
                     container.style.cursor = 'grabbing';
+                    // 绑定 document 级别事件，确保鼠标移出画布仍能平移
+                    document.addEventListener('mousemove', onMouseMove);
+                    const onUp = () => {
+                        isPanning = false;
+                        container.style.cursor = '';
+                        document.removeEventListener('mousemove', onMouseMove);
+                        document.removeEventListener('mouseup', onUp);
+                    };
+                    document.addEventListener('mouseup', onUp);
                 }
             });
 
-            // 鼠标释放
-            container.addEventListener('mouseup', (e) => {
+            // 鼠标释放（容器内非平移状态的清理）
+            container.addEventListener('mouseup', () => {
                 if (isPanning) {
                     isPanning = false;
                     container.style.cursor = '';
                 }
-            });
-
-            container.addEventListener('mouseleave', () => {
-                isPanning = false;
-                container.style.cursor = '';
             });
         },
 

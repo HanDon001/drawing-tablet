@@ -51,7 +51,14 @@
             const { tool, params } = action;
             switch (tool) {
                 // 绘制
-                case 'draw_shape':      return this.drawShape(params);
+                case 'draw_shape':          return this.drawShape(params);
+                // 操控
+                case 'set_active_tool':     return this.setActiveTool(params);
+                case 'set_brush_params':    return this.setBrushParams(params);
+                case 'draw_freehand_path':  return this.drawFreehandPath(params);
+                case 'trigger_ui_action':   return this.triggerUIAction(params);
+                case 'delete_object':       return this.deleteObjectById(params);
+                case 'draw_preset_pattern': return this.drawPresetPattern(params);
                 case 'draw_multiple':   return this.drawMultiple(params);
                 // 编辑
                 case 'edit_shape':      return this.editShape(params);
@@ -59,6 +66,7 @@
                 case 'resize_shape':    return this.resizeShape(params);
                 case 'set_opacity':     return this.setOpacity(params);
                 case 'set_stroke':      return this.setStroke(params);
+                case 'rotate_shape':    return this.rotateShape(params);
                 // 删除
                 case 'delete_shape':    return this.deleteShape(params);
                 case 'delete_all':      return this.clearAll();
@@ -81,6 +89,10 @@
                 case 'ai_generate_image': return this.aiGenerateImage(params);
                 case 'ai_redraw_region':  return this.aiRedrawRegion(params);
                 case 'set_drawing_mode':  return this.setDrawingMode(params);
+                // 矢量图形
+                case 'add_vector_shape':  return this.addVectorShape(params);
+                case 'draw_svg_path':     return this.drawSvgPath(params);
+                case 'generate_vector_art': return this.generateVectorArt(action);
                 default:
                     console.warn('[Cmd] 未知工具:', tool);
                     return false;
@@ -99,8 +111,14 @@
                 color = VC.Config.COLOR_MAP[color];
             }
 
-            // 坐标处理：x,y >= 0 时使用坐标，否则回退到 position 名称
-            const hasCoords = params.x !== undefined && params.y !== undefined && params.x >= 0 && params.y >= 0;
+            // 边框颜色转换：中文名 → 十六进制，默认为'none'（无边框）
+            let strokeColor = params.stroke_color || params.strokeColor || '无';
+            if (VC.Config.COLOR_MAP[strokeColor]) {
+                strokeColor = VC.Config.COLOR_MAP[strokeColor];
+            }
+
+            // 坐标处理：有 x,y 时使用坐标，否则回退到 position 名称
+            const hasCoords = params.x !== undefined && params.y !== undefined;
 
             const obj = VC.State.addObject({
                 shape: params.shape_type || params.shape || 'circle',
@@ -110,10 +128,19 @@
                 y: hasCoords ? params.y : undefined,
                 position: params.position || 'center',
                 opacity: params.opacity !== undefined ? params.opacity : 1,
-                strokeColor: params.stroke_color || params.strokeColor || '#1F2937',  // 默认黑色边框
+                strokeColor: strokeColor,
                 strokeWidth: params.stroke_width || params.strokeWidth || 2,
-                tag: params.tag || null
+                tag: params.tag || null,
+                rotation: params.rotation || 0
             });
+
+            // 同步到画布对象数组（确保 redrawAll 能读到）
+            if (VC.CanvasInteraction && VC.CanvasInteraction.objects) {
+                const ciObjs = VC.CanvasInteraction.objects;
+                if (!ciObjs.find(o => o.id === obj.id)) {
+                    ciObjs.push(obj);
+                }
+            }
 
             if (VC.Log) {
                 const shapeName = SHAPE_NAMES[obj.shape] || obj.shape;
@@ -180,6 +207,11 @@
 
             const success = VC.State.updateObject(obj.id, updates);
 
+            // 同步重绘画布
+            if (success && VC.CanvasInteraction) {
+                VC.CanvasInteraction.redrawAll();
+            }
+
             if (success && VC.Log) {
                 VC.Log.add('cmd', `已修改: ${obj.tag || obj.shape}`);
             }
@@ -195,7 +227,7 @@
             if (!obj) return false;
 
             const updates = {};
-            const hasCoords = params.x !== undefined && params.y !== undefined && params.x >= 0 && params.y >= 0;
+            const hasCoords = params.x !== undefined && params.y !== undefined;
             if (hasCoords) {
                 updates.x = params.x;
                 updates.y = params.y;
@@ -204,6 +236,10 @@
             }
 
             const success = VC.State.updateObject(obj.id, updates);
+
+            if (success && VC.CanvasInteraction) {
+                VC.CanvasInteraction.redrawAll();
+            }
 
             if (success && VC.Log) {
                 const label = hasCoords ? `(${params.x},${params.y})` : (POS_NAMES[params.position] || params.position);
@@ -265,6 +301,23 @@
             return success;
         },
 
+        /**
+         * 旋转图形
+         */
+        rotateShape(params) {
+            const obj = this._resolveTarget(params.target_tag || params.targetId);
+            if (!obj) return false;
+
+            const angle = params.angle || 0;
+            const success = VC.State.updateObject(obj.id, { rotation: angle });
+
+            if (success && VC.Log) {
+                VC.Log.add('cmd', `旋转: ${obj.tag || obj.shape} → ${angle}°`);
+            }
+
+            return success;
+        },
+
         // ─── 删除 ─────────────────────────────────────
 
         /**
@@ -279,6 +332,14 @@
 
             const name = obj.tag || obj.shape;
             const success = VC.State.deleteObject(obj.id);
+
+            // 同步从画布对象数组移除
+            if (success && VC.CanvasInteraction) {
+                const ciObjs = VC.CanvasInteraction.objects;
+                const idx = ciObjs.findIndex(o => o.id === obj.id);
+                if (idx >= 0) ciObjs.splice(idx, 1);
+                VC.CanvasInteraction.redrawAll();
+            }
 
             if (success && VC.Log) {
                 VC.Log.add('cmd', `已删除: ${name}`);
@@ -519,6 +580,11 @@
          */
         clearAll() {
             VC.State.clearAll();
+            // 同步清空画布对象数组
+            if (VC.CanvasInteraction) {
+                VC.CanvasInteraction.objects.length = 0;
+                VC.CanvasInteraction.redrawAll();
+            }
 
             if (VC.Log) {
                 VC.Log.add('cmd', '已清空画布');
@@ -662,6 +728,411 @@
             return true;
         },
 
+        // ─── 矢量图形 ─────────────────────────────────
+
+        /**
+         * 添加参数化矢量图形
+         */
+        addVectorShape(params) {
+            const shapeType = params.shape_type;
+            if (!shapeType || !VC.Vector || !VC.Vector.hasType(shapeType)) {
+                console.warn('[Cmd] 未知矢量类型:', shapeType);
+                return false;
+            }
+
+            const scale = params.scale || 1;
+            const size = 80 * scale;
+            const pathData = VC.Vector.generate(shapeType, size);
+            if (!pathData) return false;
+
+            // 颜色转换
+            let fillColor = params.fill_color || params.fill || 'none';
+            if (VC.Config.COLOR_MAP[fillColor]) fillColor = VC.Config.COLOR_MAP[fillColor];
+            let strokeColor = params.stroke_color || params.stroke || '#333333';
+            if (VC.Config.COLOR_MAP[strokeColor]) strokeColor = VC.Config.COLOR_MAP[strokeColor];
+
+            const obj = {
+                id: 'vec_' + Date.now() + '_' + Math.random(),
+                type: 'vector',
+                shape: shapeType,
+                pathData: pathData,
+                size: size,
+                fill: fillColor,
+                stroke: strokeColor,
+                strokeWidth: params.stroke_width || 2,
+                opacity: params.opacity !== undefined ? params.opacity : 1,
+                x: params.x !== undefined ? params.x : 0.5,
+                y: params.y !== undefined ? params.y : 0.5,
+                rotation: params.rotation || 0,
+                scale: scale
+            };
+
+            // 存入画布对象数组
+            const objects = VC.CanvasInteraction.objects;
+            objects.push(obj);
+
+            // 同步到 VC.State
+            if (VC.State) {
+                VC.State.objects = objects;
+                VC.State.selectedObjectId = obj.id;
+                VC.State.emit('objectsChange', { action: 'add', object: obj });
+            }
+
+            VC.CanvasInteraction.redrawAll();
+
+            if (VC.Log) {
+                VC.Log.add('cmd', `矢量绘制: ${shapeType}`);
+            }
+            return obj;
+        },
+
+        /**
+         * 绘制 SVG 路径
+         */
+        drawSvgPath(params) {
+            if (!params.svg_d || !VC.Vector) return false;
+
+            const pathData = VC.Vector.parseSVG(params.svg_d);
+            if (!pathData) {
+                console.warn('[Cmd] SVG 路径解析失败');
+                return false;
+            }
+
+            // 颜色转换
+            let fillColor = params.fill || 'none';
+            if (VC.Config.COLOR_MAP[fillColor]) fillColor = VC.Config.COLOR_MAP[fillColor];
+            let strokeColor = params.stroke || '#333333';
+            if (VC.Config.COLOR_MAP[strokeColor]) strokeColor = VC.Config.COLOR_MAP[strokeColor];
+
+            const scale = params.scale || 1;
+
+            const obj = {
+                id: 'svg_' + Date.now() + '_' + Math.random(),
+                type: 'vector',
+                shape: 'svg_path',
+                pathData: pathData,
+                size: 80 * scale,
+                fill: fillColor,
+                stroke: strokeColor,
+                strokeWidth: params.stroke_width || 2,
+                opacity: 1,
+                x: params.x !== undefined ? params.x : 0.5,
+                y: params.y !== undefined ? params.y : 0.5,
+                rotation: 0,
+                scale: scale
+            };
+
+            const objects = VC.CanvasInteraction.objects;
+            objects.push(obj);
+
+            if (VC.State) {
+                VC.State.objects = objects;
+                VC.State.selectedObjectId = obj.id;
+                VC.State.emit('objectsChange', { action: 'add', object: obj });
+            }
+
+            VC.CanvasInteraction.redrawAll();
+
+            if (VC.Log) {
+                VC.Log.add('cmd', 'SVG 路径绘制完成');
+            }
+            return obj;
+        },
+
+        /**
+         * AI 文生图 + 矢量化
+         * 后端生成图片 → 提取轮廓 → 返回 SVG paths
+         */
+        generateVectorArt(action) {
+            const result = action.result;
+            if (!result || !result.paths || !Array.isArray(result.paths)) {
+                console.warn('[Cmd] generate_vector_art: 无路径数据');
+                return false;
+            }
+
+            const paths = result.paths;
+            const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800;
+            const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600;
+
+            // 解析 SVG 路径中的所有坐标点，计算精确包围盒
+            let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
+            for (const svgD of paths) {
+                // 提取所有数字对（坐标）
+                const tokens = svgD.match(/[MmLlHhVvCcSsQqTtAaZz]|-?\d+\.?\d*/g);
+                if (!tokens) continue;
+                let i = 0, cmd = 'M', px = 0, py = 0;
+                while (i < tokens.length) {
+                    if (/[MmLlHhVvCcSsQqTtAaZz]/.test(tokens[i])) {
+                        cmd = tokens[i]; i++;
+                    }
+                    switch (cmd) {
+                        case 'M': case 'L': case 'T':
+                            if (i + 1 < tokens.length) { px = parseFloat(tokens[i]); py = parseFloat(tokens[i + 1]); minX = Math.min(minX, px); minY = Math.min(minY, py); maxX = Math.max(maxX, px); maxY = Math.max(maxY, py); i += 2; } else i++;
+                            break;
+                        case 'm': case 'l': case 't':
+                            if (i + 1 < tokens.length) { px += parseFloat(tokens[i]); py += parseFloat(tokens[i + 1]); minX = Math.min(minX, px); minY = Math.min(minY, py); maxX = Math.max(maxX, px); maxY = Math.max(maxY, py); i += 2; } else i++;
+                            break;
+                        case 'H':
+                            if (i < tokens.length) { px = parseFloat(tokens[i]); minX = Math.min(minX, px); maxX = Math.max(maxX, px); i++; } else i++;
+                            break;
+                        case 'V':
+                            if (i < tokens.length) { py = parseFloat(tokens[i]); minY = Math.min(minY, py); maxY = Math.max(maxY, py); i++; } else i++;
+                            break;
+                        case 'C':
+                            while (i + 5 < tokens.length && !/[MmLlHhVvCcSsQqTtAaZz]/.test(tokens[i])) { i += 4; px = parseFloat(tokens[i]); py = parseFloat(tokens[i + 1]); minX = Math.min(minX, px); minY = Math.min(minY, py); maxX = Math.max(maxX, px); maxY = Math.max(maxY, py); i += 2; } break;
+                        case 'Q':
+                            while (i + 3 < tokens.length && !/[MmLlHhVvCcSsQqTtAaZz]/.test(tokens[i])) { i += 2; px = parseFloat(tokens[i]); py = parseFloat(tokens[i + 1]); minX = Math.min(minX, px); minY = Math.min(minY, py); maxX = Math.max(maxX, px); maxY = Math.max(maxY, py); i += 2; } break;
+                        default:
+                            i++; break;
+                    }
+                }
+            }
+
+            // 如果解析失败，用默认范围
+            if (!isFinite(minX)) { minX = 0; minY = 0; maxX = 512; maxY = 512; }
+
+            const srcW = maxX - minX || 1;
+            const srcH = maxY - minY || 1;
+            // 目标：占画布 60%，保持宽高比
+            const targetSize = Math.min(canvasW, canvasH) * 0.6;
+            const scale = targetSize / Math.max(srcW, srcH);
+
+            let count = 0;
+            for (const svgD of paths) {
+                try {
+                    const pathData = new Path2D(svgD);
+                    const obj = {
+                        id: 'vart_' + Date.now() + '_' + Math.random(),
+                        type: 'vector',
+                        shape: 'svg_path',
+                        pathData: pathData,
+                        size: 80,
+                        fill: '#333333',
+                        stroke: 'none',
+                        strokeWidth: 0,
+                        opacity: 1,
+                        x: 0.5,  // 画布中心
+                        y: 0.5,
+                        rotation: 0,
+                        scale: scale,
+                        _vectorArt: true,
+                        _minX: minX,
+                        _minY: minY,
+                        _srcW: srcW,
+                        _srcH: srcH,
+                    };
+
+                    const objects = VC.CanvasInteraction.objects;
+                    objects.push(obj);
+                    count++;
+                } catch (e) {
+                    console.warn('[Cmd] SVG path 解析失败:', e);
+                }
+            }
+
+            if (count > 0) {
+                // 同步到 VC.State
+                if (VC.State) {
+                    VC.State.objects = VC.CanvasInteraction.objects;
+                    VC.State.emit('objectsChange', { action: 'add' });
+                }
+                VC.CanvasInteraction.redrawAll();
+            }
+
+            if (VC.Log) {
+                VC.Log.add('cmd', `AI矢量图: ${count}条路径`);
+            }
+            return count > 0;
+        },
+
+        // ─── 操控工具 ─────────────────────────────────
+
+        /**
+         * 切换当前工具
+         */
+        setActiveTool(params) {
+            const tool = params.tool || 'pen';
+            if (typeof setDrawTool === 'function') {
+                setDrawTool(tool);
+            } else {
+                VC.State.currentTool = tool;
+            }
+            if (VC.Log) VC.Log.add('cmd', `切换工具: ${tool}`);
+            return true;
+        },
+
+        /**
+         * 设置画笔参数
+         */
+        setBrushParams(params) {
+            if (params.color) {
+                VC.State.brush = VC.State.brush || {};
+                VC.State.brush.color = params.color;
+                // 同步到全局变量
+                if (typeof currentBrushColor !== 'undefined') currentBrushColor = params.color;
+            }
+            if (params.size) {
+                VC.State.brush = VC.State.brush || {};
+                VC.State.brush.size = params.size;
+                if (typeof brushSize !== 'undefined') brushSize = params.size;
+            }
+            if (VC.Log) VC.Log.add('cmd', `画笔设置: ${params.color || ''} ${params.size || ''}`);
+            return true;
+        },
+
+        /**
+         * 自由路径绘制（带动画）
+         */
+        async drawFreehandPath(params) {
+            let points = params.points;
+            if (typeof points === 'string') {
+                try { points = JSON.parse(points); } catch (e) { return false; }
+            }
+            if (!Array.isArray(points) || points.length < 2) return false;
+
+            // 设置画笔参数
+            if (params.color) this.setBrushParams({ color: params.color });
+            if (params.size) this.setBrushParams({ size: params.size });
+
+            const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800;
+            const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600;
+            const drawCanvas = document.getElementById('drawCanvas');
+            const drawCtx = drawCanvas ? drawCanvas.getContext('2d') : null;
+            if (!drawCtx) return false;
+
+            // 动画绘制
+            for (let i = 1; i < points.length; i++) {
+                const x0 = (points[i - 1].x || 0) * canvasW;
+                const y0 = (points[i - 1].y || 0) * canvasH;
+                const x1 = (points[i].x || 0) * canvasW;
+                const y1 = (points[i].y || 0) * canvasH;
+
+                drawCtx.beginPath();
+                drawCtx.moveTo(x0, y0);
+                drawCtx.lineTo(x1, y1);
+                drawCtx.strokeStyle = params.color || VC.State.brush?.color || '#333';
+                drawCtx.lineWidth = params.size || VC.State.brush?.size || 3;
+                drawCtx.lineCap = 'round';
+                drawCtx.stroke();
+
+                await new Promise(r => setTimeout(r, 30));
+            }
+
+            if (VC.Log) VC.Log.add('cmd', `自由绘制: ${points.length}点`);
+            return true;
+        },
+
+        /**
+         * 触发UI动作
+         */
+        triggerUIAction(params) {
+            const action = params.action;
+            switch (action) {
+                case 'undo': this.undo(); break;
+                case 'clear_all': this.clearAll(); break;
+                case 'redo': this.redo(); break;
+                default:
+                    console.warn('[Cmd] 未知UI动作:', action);
+                    return false;
+            }
+            if (VC.Log) VC.Log.add('cmd', `UI动作: ${action}`);
+            return true;
+        },
+
+        /**
+         * 通过ID删除对象
+         */
+        deleteObjectById(params) {
+            const id = params.object_id || params.id;
+            if (!id) return false;
+            const obj = VC.State.objects.find(o => o.id === id);
+            if (!obj) return false;
+            const success = VC.State.deleteObject(obj.id);
+            if (success && VC.Log) VC.Log.add('cmd', `已删除: ${obj.tag || obj.shape}(${id})`);
+            return success;
+        },
+
+        /**
+         * 绘制预设图案
+         */
+        drawPresetPattern(params) {
+            const pattern = params.pattern || 'flower';
+            const x = params.x || 0.5;
+            const y = params.y || 0.5;
+            const scale = params.scale || 1;
+            const color = params.color || '红';
+            const colorHex = VC.Config.COLOR_MAP[color] || color;
+
+            const generators = {
+                flower: () => {
+                    // 花瓣 + 花心
+                    const petalCount = 5;
+                    const petalSize = 30 * scale;
+                    const centerSize = 15 * scale;
+                    const results = [];
+                    // 花心
+                    results.push(this.drawShape({ shape_type: 'circle', color: '黄', size: 'small', x, y, tag: '花心', stroke_color: '无' }));
+                    // 花瓣
+                    for (let i = 0; i < petalCount; i++) {
+                        const angle = (Math.PI * 2 / petalCount) * i - Math.PI / 2;
+                        const px = x + Math.cos(angle) * 0.06 * scale;
+                        const py = y + Math.sin(angle) * 0.06 * scale;
+                        results.push(this.drawShape({ shape_type: 'circle', color: colorHex, size: 'small', x: px, y: py, stroke_color: '无' }));
+                    }
+                    return results;
+                },
+                tree: () => {
+                    const results = [];
+                    results.push(this.drawShape({ shape_type: 'rectangle', color: '#8B4513', size: 'small', x, y: y + 0.05, tag: '树干', stroke_color: '无' }));
+                    results.push(this.drawShape({ shape_type: 'circle', color: '#22C55E', size: 'large', x, y: y - 0.03, tag: '树冠', stroke_color: '无' }));
+                    return results;
+                },
+                house: () => {
+                    const results = [];
+                    results.push(this.drawShape({ shape_type: 'rectangle', color: '#8B4513', size: 'large', x, y, tag: '墙', stroke_color: '无' }));
+                    results.push(this.drawShape({ shape_type: 'triangle', color: '#A0522D', size: 'medium', x, y: y - 0.06, tag: '屋顶', stroke_color: '无' }));
+                    results.push(this.drawShape({ shape_type: 'rectangle', color: '#87CEEB', size: 'small', x: x - 0.03, y, tag: '窗户', stroke_color: '无' }));
+                    results.push(this.drawShape({ shape_type: 'rectangle', color: '#654321', size: 'small', x: x + 0.03, y, tag: '门', stroke_color: '无' }));
+                    return results;
+                },
+                heart: () => {
+                    const results = [];
+                    const s = 0.03 * scale;
+                    results.push(this.drawShape({ shape_type: 'circle', color: colorHex, size: 'small', x: x - s, y: y - s, stroke_color: '无' }));
+                    results.push(this.drawShape({ shape_type: 'circle', color: colorHex, size: 'small', x: x + s, y: y - s, stroke_color: '无' }));
+                    results.push(this.drawShape({ shape_type: 'triangle', color: colorHex, size: 'small', x, y: y + s, stroke_color: '无' }));
+                    return results;
+                },
+                star: () => {
+                    return [this.drawShape({ shape_type: 'star', color: colorHex, size: 'large', x, y, tag: '星星', stroke_color: '无' })];
+                },
+            };
+
+            const gen = generators[pattern];
+            if (!gen) return false;
+            const results = gen();
+            if (VC.Log) VC.Log.add('cmd', `预设图案: ${pattern}`);
+            return results.length > 0;
+        },
+
+        /**
+         * 批量执行动作（带动画延迟和数量限制）
+         */
+        async executeActions(actions) {
+            const MAX_ACTIONS = 10;
+            const safeActions = actions.slice(0, MAX_ACTIONS);
+            const results = [];
+
+            for (const action of safeActions) {
+                console.log(`[Execute] ${action.tool}`, action.params);
+                const result = this.execute(action);
+                results.push(result);
+                await new Promise(r => setTimeout(r, 200));
+            }
+
+            return results;
+        },
+
         // ─── 内部方法 ─────────────────────────────────
 
         /**
@@ -771,24 +1242,32 @@
         },
 
         /**
-         * 构建画布上下文描述
+         * 构建增强画布上下文：工具状态 + 画笔参数 + 对象列表(含ID)
          */
         _buildCanvasContext() {
             const objs = VC.State.objects || [];
-            if (objs.length === 0) return '画布为空';
+            const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800;
+            const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600;
 
-            return objs.map(o => {
-                let posDesc
+            // 1. 工具状态
+            const toolState = `当前工具:${VC.State.currentTool || 'select'}, 画笔颜色:${VC.State.brush?.color || '#333'}, 笔刷大小:${VC.State.brush?.size || 3}`;
+
+            // 2. 对象列表
+            const objectsDesc = objs.length === 0 ? '画布为空' : objs.map((o, i) => {
+                let posDesc;
                 if (o.x !== undefined && o.y !== undefined) {
-                    posDesc = `坐标(${o.x.toFixed(2)},${o.y.toFixed(2)})`
+                    posDesc = `(${o.x.toFixed(2)},${o.y.toFixed(2)})`;
                 } else {
-                    posDesc = POS_NAMES[o.position] || o.position
+                    posDesc = POS_NAMES[o.position] || o.position;
                 }
                 const shape = SHAPE_NAMES[o.shape] || o.shape;
-                const tag = o.tag ? `，叫"${o.tag}"` : '';
-                const opacity = o.opacity < 1 ? `，透明度${o.opacity}` : '';
-                return `${posDesc}有${o.color}${shape}${tag}${opacity}`;
-            }).join('；');
+                const tag = o.tag ? ` tag="${o.tag}"` : '';
+                const rot = o.rotation ? ` rot=${Math.round(o.rotation)}°` : '';
+                const size = typeof o.size === 'string' ? o.size : `${o.size}px`;
+                return `id=${o.id} ${shape}${tag} ${posDesc} ${o.color} ${size}${rot}`;
+            }).join('; ');
+
+            return `画布${canvasW}x${canvasH}。${toolState}。对象: ${objectsDesc}`;
         },
 
         /**

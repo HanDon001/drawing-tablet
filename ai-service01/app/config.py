@@ -17,7 +17,7 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = Field(..., description="DeepSeek API Key")
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     LLM_MODEL: str = "deepseek-v4-flash"
-    LLM_TIMEOUT: float = 8.0
+    LLM_TIMEOUT: float = 30.0
 
     # ── DashScope（ASR + 图片） ──
     DASHSCOPE_API_KEY: str = Field(..., description="DashScope API Key")

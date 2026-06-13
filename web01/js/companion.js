@@ -466,24 +466,56 @@
         },
 
         sendText(text) {
-            const SHAPE_NAMES = { circle: '圆形', rectangle: '矩形', triangle: '三角形', line: '直线', star: '星形', diamond: '菱形', arrow: '箭头', hexagon: '六边形' }
-            const POS_NAMES = { center: '中间', left_top: '左上角', top: '上方', right_top: '右上角', left: '左边', right: '右边', left_bottom: '左下角', bottom: '下方', right_bottom: '右下角' }
+            const SHAPE_NAMES = { circle: '圆形', rectangle: '矩形', triangle: '三角形', line: '直线', star: '星形', diamond: '菱形', arrow: '箭头', hexagon: '六边形', svg_path: 'SVG路径', vector: '矢量图' }
+            const SIZE_LABELS = { small: '小(40px)', medium: '中(80px)', large: '大(140px)' }
             const objs = VC.State.objects || []
-            const canvasSize = (VC.Canvas && VC.Canvas.getSize) ? VC.Canvas.getSize() : { width: 800, height: 600 }
-            const ctx = objs.length === 0 ? '画布为空' : objs.map(o => {
+            const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800
+            const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600
+
+            const ctx = objs.length === 0 ? '画布为空' : objs.map((o, i) => {
                 const shape = SHAPE_NAMES[o.shape] || o.shape
-                const tag = o.tag ? `，叫"${o.tag}"` : ''
-                // 优先使用坐标描述位置
-                let posDesc
-                if (o.x !== undefined && o.y !== undefined) {
-                    posDesc = `坐标(${o.x.toFixed(2)},${o.y.toFixed(2)})`
-                } else {
-                    posDesc = POS_NAMES[o.position] || o.position
+                const tag = o.tag ? `"${o.tag}"` : `#${i + 1}`
+                const x = o.x !== undefined ? o.x.toFixed(3) : '?'
+                const y = o.y !== undefined ? o.y.toFixed(3) : '?'
+                const size = typeof o.size === 'number' ? `${o.size}px` : (SIZE_LABELS[o.size] || o.size)
+                const color = o.color && o.color !== 'none' ? o.color : '无填充'
+                const stroke = o.stroke && o.stroke !== 'none' ? `描边${o.stroke}` : ''
+                const rot = o.rotation ? `旋转${o.rotation}°` : ''
+                const opacity = o.opacity !== undefined && o.opacity !== 1 ? `透明度${(o.opacity * 100).toFixed(0)}%` : ''
+
+                // 计算屏幕像素位置
+                const px = o.x !== undefined ? Math.round(o.x * canvasW) : '?'
+                const py = o.y !== undefined ? Math.round(o.y * canvasH) : '?'
+
+                return `[${tag}] ${shape} pos(${x},${y})≈${px},${py}px size=${size} color=${color} ${stroke} ${rot} ${opacity}`.trim()
+            }).join('\n')
+
+            // 计算对象之间的空间关系
+            let relations = ''
+            if (objs.length >= 2) {
+                const rels = []
+                for (let i = 0; i < objs.length; i++) {
+                    for (let j = i + 1; j < objs.length; j++) {
+                        const a = objs[i], b = objs[j]
+                        if (a.x !== undefined && b.x !== undefined) {
+                            const dx = (b.x - a.x) * canvasW
+                            const dy = (b.y - a.y) * canvasH
+                            const dist = Math.round(Math.sqrt(dx * dx + dy * dy))
+                            const dir = Math.abs(dx) > Math.abs(dy)
+                                ? (dx > 0 ? '右' : '左')
+                                : (dy > 0 ? '下' : '上')
+                            const aTag = a.tag || `#${i + 1}`
+                            const bTag = b.tag || `#${j + 1}`
+                            if (dist < 50) rels.push(`${bTag}紧挨${aTag}`)
+                            else rels.push(`${bTag}在${aTag}${dir}侧${dist}px`)
+                        }
+                    }
                 }
-                return `${posDesc}有${o.color}${shape}${tag}`
-            }).join('；')
-            const canvasInfo = `画布尺寸:${canvasSize.width}x${canvasSize.height}px，坐标系x(0-1)y(0-1)`
-            sendJSON({ action: 'text', text, canvas_context: `${canvasInfo}；${ctx}` })
+                if (rels.length > 0) relations = '\n空间关系: ' + rels.slice(0, 10).join('；')
+            }
+
+            const canvasInfo = `画布${canvasW}x${canvasH}px 坐标系(0-1) (0,0)=左上 (0.5,0.5)=中心 (1,1)=右下`
+            sendJSON({ action: 'text', text, canvas_context: `${canvasInfo}\n对象:\n${ctx}${relations}` })
         },
 
         getState() { return state }

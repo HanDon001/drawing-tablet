@@ -13,3 +13,8 @@ httpx>=0.27.0
 pydantic-settings>=2.1.0
 loguru>=0.7.2
 python-dotenv>=1.0.0
+
+# 图片处理 + 矢量化
+Pillow>=10.0.0
+opencv-python-headless>=4.8.0
+numpy>=1.24.0

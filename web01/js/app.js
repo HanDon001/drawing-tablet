@@ -96,11 +96,20 @@
         } else if (mod === 'multimodal') {
             if (VC.AIMode.currentMode === 'multi') VC.AIMode.deactivateMultiModal(); else VC.AIMode.activateMultiModal();
         } else if (mod === 'voice-draw') {
-            VC.Speech.startListening(); VC.Chat.addChat('assistant', '语音绘图模式已开启，请说出绘图指令。');
+            // 切换回正常模式（不停止麦克风，只是退出 AI 模式）
+            if (VC.AIMode.currentMode !== 'normal') {
+                VC.AIMode.deactivateAIMode();
+            } else {
+                VC.Chat.addChat('assistant', '已切换到标准模式，点击麦克风开始语音绘图。');
+            }
+        } else if (mod === 'vector-draw') {
+            // 启动 AI 陪伴模式 + 矢量绘图提示
+            if (VC.AIMode.currentMode !== 'ai') VC.AIMode.activateAIMode();
+            setTimeout(() => {
+                VC.Chat.addChat('assistant', '矢量画图模式已激活！告诉我你想画什么，我会用矢量图形为你绘制。支持：心形❤️、螺旋🌀、波浪🌊、齿轮⚙️、树🌳、云朵☁️、闪电⚡、花朵🌸等。');
+            }, 500);
         } else if (mod === 'demo') { runDemo(); }
         else if (mod === 'ai-draw') { document.getElementById('aiPromptBar').classList.toggle('hidden'); }
-        else if (mod === 'theme') { VC.Chat.addChat('user', '帮我创作一幅自然风光主题的画'); if (VC.Cmd) VC.Cmd.processText('帮我创作一幅自然风光主题的画'); }
-        else if (mod === 'describe') { VC.Chat.addChat('user', '描述一下画布上的内容'); if (VC.Cmd) VC.Cmd.processText('描述一下画布上的内容'); }
         else if (mod === 'optimize') { VC.Chat.addChat('user', '帮我优化一下画布布局'); if (VC.Cmd) VC.Cmd.processText('帮我优化一下画布布局'); }
         else { VC.Chat.addChat('assistant', `${mod} 模块正在开发中，敬请期待！`); }
     }
