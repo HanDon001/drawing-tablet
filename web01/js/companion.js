@@ -173,6 +173,9 @@
     }
 
     // ── TTS ──
+    const TTS_TIMEOUT = 10000  // TTS 请求超时时间
+    const SPEECH_SYNTHESIS_TIMEOUT = 30000  // SpeechSynthesis 超时时间
+
     async function speakText(text) {
         let speakEndCalled = false
         const safeOnSpeakEnd = () => {
@@ -181,32 +184,101 @@
             onSpeakEnd()
         }
 
+        let url = null  // 用于跟踪 Blob URL
+
         try {
-            const resp = await fetch(VC.Config.API_BASE + '/voice/tts', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ text, voice: 'Chloe' })
-            })
-            if (resp.ok) {
-                const blob = await resp.blob()
-                const url = URL.createObjectURL(blob)
-                currentAudio = new Audio(url)
-                return new Promise((resolve) => {
-                    currentAudio.onended = () => { URL.revokeObjectURL(url); currentAudio = null; safeOnSpeakEnd(); resolve() }
-                    currentAudio.onerror = () => { URL.revokeObjectURL(url); currentAudio = null; safeOnSpeakEnd(); resolve() }
-                    currentAudio.play().catch(() => { currentAudio = null; safeOnSpeakEnd(); resolve() })
+            // 修复4.2: 添加 AbortController 超时保护
+            const controller = new AbortController()
+            const timeout = setTimeout(() => controller.abort(), TTS_TIMEOUT)
+
+            try {
+                const resp = await fetch(VC.Config.API_BASE + '/voice/tts', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, voice: 'Chloe' }),
+                    signal: controller.signal
                 })
+                clearTimeout(timeout)
+
+                if (resp.ok) {
+                    const blob = await resp.blob()
+                    url = URL.createObjectURL(blob)
+                    currentAudio = new Audio(url)
+                    return new Promise((resolve) => {
+                        // 修复4.1: 确保所有路径都释放 Blob URL
+                        currentAudio.onended = () => {
+                            if (url) URL.revokeObjectURL(url)
+                            currentAudio = null
+                            safeOnSpeakEnd()
+                            resolve()
+                        }
+                        currentAudio.onerror = () => {
+                            if (url) URL.revokeObjectURL(url)
+                            currentAudio = null
+                            safeOnSpeakEnd()
+                            resolve()
+                        }
+                        currentAudio.play().catch(() => {
+                            // 修复4.1: play() 失败时也释放 URL
+                            if (url) URL.revokeObjectURL(url)
+                            currentAudio = null
+                            safeOnSpeakEnd()
+                            resolve()
+                        })
+                    })
+                }
+            } catch (fetchError) {
+                clearTimeout(timeout)
+                // 如果是超时或其他 fetch 错误，继续到降级逻辑
+                if (fetchError.name === 'AbortError') {
+                    console.warn('[Companion] TTS 请求超时')
+                } else {
+                    console.warn('[Companion] TTS 请求失败:', fetchError)
+                }
+                // 释放可能已创建的 URL
+                if (url) URL.revokeObjectURL(url)
             }
         } catch (e) {
             console.warn('[Companion] TTS 失败:', e)
+            if (url) URL.revokeObjectURL(url)
         }
-        // 降级
+
+        // 修复4.3: 降级到 SpeechSynthesis，添加超时保护
         return new Promise((resolve) => {
             const u = new SpeechSynthesisUtterance(text)
-            u.lang = 'zh-CN'; u.rate = 0.9
-            u.onend = () => { safeOnSpeakEnd(); resolve() }
-            u.onerror = () => { safeOnSpeakEnd(); resolve() }
-            speechSynthesis.speak(u)
+            u.lang = 'zh-CN'
+            u.rate = 0.9
+
+            // 超时保护，防止长文本中途停止
+            const speechTimeout = setTimeout(() => {
+                console.warn('[Companion] SpeechSynthesis 超时，强制结束')
+                speechSynthesis.cancel()
+                safeOnSpeakEnd()
+                resolve()
+            }, SPEECH_SYNTHESIS_TIMEOUT)
+
+            u.onend = () => {
+                clearTimeout(speechTimeout)
+                safeOnSpeakEnd()
+                resolve()
+            }
+            u.onerror = (e) => {
+                // 修复4.3: 错误时也要清理
+                clearTimeout(speechTimeout)
+                console.warn('[Companion] SpeechSynthesis 错误:', e)
+                safeOnSpeakEnd()
+                resolve()
+            }
+
+            try {
+                speechSynthesis.speak(u)
+            } catch (e) {
+                // 修复4.3: speak() 可能抛出异常
+                clearTimeout(speechTimeout)
+                console.warn('[Companion] SpeechSynthesis.speak() 异常:', e)
+                safeOnSpeakEnd()
+                resolve()
+            }
         })
     }
 
