@@ -1,37 +1,27 @@
 @echo off
-chcp 65001 >nul
-title VoiceCanvas
-
-set PROJECT_DIR=%~dp0
+chcp 65001 >nul 2>&1
 
 echo ========================================
-echo   VoiceCanvas - Start
+echo   VoiceCanvas AI v0.2
 echo ========================================
-echo.
 
-echo [0/2] Kill existing processes...
+echo Killing old processes on port 8000 and 5173...
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :8000 ^| findstr LISTENING') do taskkill /F /PID %%a >nul 2>&1
 for /f "tokens=5" %%a in ('netstat -aon ^| findstr :5173 ^| findstr LISTENING') do taskkill /F /PID %%a >nul 2>&1
-echo      Done.
+echo Done.
+
 echo.
+echo [1/2] Starting backend on port 8000...
+start "AI-Backend" /D "%~dp0ai-service01" cmd /c "python run.py"
 
-echo [1/2] Starting Backend...
-start "Backend" cmd /k "cd /d %PROJECT_DIR%ai-service && D:\Py\.venv\Scripts\python.exe run.py"
-echo      Backend: http://localhost:8000
+timeout /t 3 /nobreak >nul 2>&1
+
+echo [2/2] Starting frontend on port 5173...
+start "Web-Frontend" /D "%~dp0web01" cmd /c "npx vite --host"
+
 echo.
-
-timeout /t 3 /nobreak >nul
-
-echo [2/2] Starting Frontend...
-start "Frontend" cmd /k "cd /d %PROJECT_DIR%web && npm run dev"
-echo      Frontend: http://localhost:5173
-echo.
-
-echo ========================================
-echo   Done!
+echo Done!
 echo   Frontend: http://localhost:5173
-echo   Backend: http://localhost:8000
-echo   API Docs: http://localhost:8000/docs
-echo ========================================
+echo   Backend:  http://localhost:8000
 echo.
 pause
