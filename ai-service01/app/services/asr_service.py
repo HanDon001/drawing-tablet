@@ -116,7 +116,11 @@ class ASRSession:
 
         logger.info(f"[ASR-WS] 连接: {url}")
         try:
-            self.ws = await websockets.connect(url, extra_headers=headers, max_size=10*1024*1024)
+            # 兼容新旧版本 websockets
+            try:
+                self.ws = await websockets.connect(url, additional_headers=headers, max_size=10*1024*1024)
+            except TypeError:
+                self.ws = await websockets.connect(url, extra_headers=headers, max_size=10*1024*1024)
         except Exception as e:
             logger.error(f"[ASR-WS] 连接失败: {e}")
             raise ASRError(f"ASR 连接失败: {e}")
@@ -155,8 +159,13 @@ class ASRSession:
 
     async def _listen_loop(self):
         try:
-            while self.ws and self.ws.open:
-                raw = await self.ws.recv()
+            while self.ws:
+                try:
+                    raw = await self.ws.recv()
+                except websockets.ConnectionClosed:
+                    logger.warning("[ASR-WS] 连接已关闭")
+                    break
+
                 msg = json.loads(raw)
                 msg_type = msg.get("type", "")
 
@@ -176,22 +185,26 @@ class ASRSession:
                     err = msg.get("error", {}).get("message", "未知错误")
                     logger.error(f"[ASR-WS] 服务端错误: {err}")
 
-        except websockets.ConnectionClosed as e:
-            logger.warning(f"[ASR-WS] 连接关闭: {e.code}")
         except asyncio.CancelledError:
             logger.info("[ASR-WS] 监听已取消")
         except Exception as e:
             logger.error(f"[ASR-WS] 监听异常: {type(e).__name__}: {e}")
 
     async def send_audio(self, pcm_data: bytes):
-        if self.ws and self.ws.open:
-            b64 = base64.b64encode(pcm_data).decode()
-            await self.ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": b64}))
+        if self.ws:
+            try:
+                b64 = base64.b64encode(pcm_data).decode()
+                await self.ws.send(json.dumps({"type": "input_audio_buffer.append", "audio": b64}))
+            except websockets.ConnectionClosed:
+                logger.warning("[ASR-WS] send_audio: 连接已关闭")
 
     async def commit(self):
-        if self.ws and self.ws.open:
-            await self.ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-            logger.debug("[ASR-WS] commit")
+        if self.ws:
+            try:
+                await self.ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
+                logger.debug("[ASR-WS] commit")
+            except websockets.ConnectionClosed:
+                logger.warning("[ASR-WS] commit: 连接已关闭")
 
     async def close(self):
         if self._listen_task:

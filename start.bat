@@ -12,7 +12,7 @@ echo Done.
 
 echo.
 echo [1/2] Starting backend on port 8000...
-start "AI-Backend" /D "%~dp0ai-service01" cmd /c "python run.py"
+start "AI-Backend" /D "%~dp0ai-service01" cmd /c ".venv\Scripts\python.exe run.py"
 
 timeout /t 3 /nobreak >nul 2>&1
 

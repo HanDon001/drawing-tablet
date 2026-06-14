@@ -162,17 +162,23 @@
         },
 
         /**
-         * 下载图片并放置到绘画层
+         * 下载图片并放置到画布（Fabric.js 版本）
          */
         async _placeImage(imageUrl) {
             return new Promise((resolve, reject) => {
+                if (!VCTools || !VCTools.canvas) {
+                    reject(new Error('Fabric.js 未初始化'));
+                    return;
+                }
+
                 const img = new Image();
                 img.crossOrigin = 'anonymous';
 
                 img.onload = () => {
                     // 计算放置位置和大小（居中，适应画布）
-                    const canvasSize = VC.Canvas.getSize();
-                    const maxSize = Math.min(canvasSize.width, canvasSize.height) * 0.6;
+                    const canvasW = VCTools.canvas.width;
+                    const canvasH = VCTools.canvas.height;
+                    const maxSize = Math.min(canvasW, canvasH) * 0.6;
                     const ratio = img.width / img.height;
 
                     let w, h;
@@ -184,10 +190,19 @@
                         w = maxSize * ratio;
                     }
 
-                    const x = (canvasSize.width - w) / 2;
-                    const y = (canvasSize.height - h) / 2;
-
-                    VC.Drawing.drawImage(img, x, y, w, h);
+                    // 使用 Fabric.js 添加图片
+                    const fabricImg = new fabric.Image(img, {
+                        left: canvasW / 2,
+                        top: canvasH / 2,
+                        originX: 'center',
+                        originY: 'center',
+                        scaleX: w / img.width,
+                        scaleY: h / img.height,
+                    });
+                    fabricImg.id = 'ai_img_' + Date.now();
+                    VCTools.canvas.add(fabricImg);
+                    VCTools.canvas.renderAll();
+                    VCTools.saveState();
                     resolve();
                 };
 
@@ -204,7 +219,11 @@
                 if (VC.Log) VC.Log.add('ai', '⚠️ 没有可重新生成的描述');
                 return false;
             }
-            VC.Drawing.clear();
+            // 使用 Fabric.js 清空画布
+            if (VCTools && VCTools.canvas) {
+                VCTools.canvas.clear();
+                VCTools.canvas.renderAll();
+            }
             return await this.generate(currentPrompt);
         },
 

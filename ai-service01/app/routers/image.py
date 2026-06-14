@@ -1,4 +1,4 @@
-"""POST /image/generate, GET /image/task/{id}"""
+"""POST /image/generate — DashScope 文生图"""
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -16,15 +16,15 @@ class GenerateRequest(BaseModel):
 
 @router.post("/generate")
 async def generate_image(req: GenerateRequest):
+    """生成图片，直接返回图片URL"""
     try:
-        task_id = await image_service.generate(req.prompt, req.style, req.size)
-        return {"status": "pending", "task_id": task_id}
+        image_url = await image_service.generate(req.prompt, req.style, req.size)
+        return {
+            "status": "success",
+            "image_url": image_url,
+            "prompt": req.prompt,
+            "style": req.style
+        }
     except Exception as e:
         logger.error(f"图片生成失败: {e}")
         raise HTTPException(status_code=500, detail=str(e))
-
-
-@router.get("/task/{task_id}")
-async def get_task(task_id: str):
-    result = await image_service.poll(task_id)
-    return result

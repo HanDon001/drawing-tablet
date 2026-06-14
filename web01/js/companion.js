@@ -334,15 +334,59 @@
     function connectWS() {
         return new Promise((resolve, reject) => {
             const protocol = location.protocol === 'https:' ? 'wss:' : 'ws:'
-            ws = new WebSocket(`${protocol}//${location.host}/ai/v1/gateway`)
+            const url = `${protocol}//${location.host}/ai/v1/gateway`
+            console.log('[Companion] 连接 WebSocket:', url)
+
+            try {
+                ws = new WebSocket(url)
+            } catch (e) {
+                console.error('[Companion] WebSocket 创建失败:', e)
+                reject(new Error('WebSocket 创建失败: ' + e.message))
+                return
+            }
+
             ws.binaryType = 'arraybuffer'
-            ws.onopen = () => { console.log('[Companion] WS 已连接'); resolve() }
-            ws.onerror = (e) => { console.error('[Companion] WS 错误'); reject(e) }
+
+            ws.onopen = () => {
+                console.log('[Companion] WS 已连接')
+                resolve()
+            }
+
+            ws.onerror = (e) => {
+                console.error('[Companion] WS 错误:', e)
+                reject(new Error('WebSocket 连接失败'))
+            }
+
             ws.onmessage = (e) => {
                 if (e.data instanceof ArrayBuffer) return
-                try { handleMessage(JSON.parse(e.data)) } catch {}
+                try {
+                    handleMessage(JSON.parse(e.data))
+                } catch (err) {
+                    console.warn('[Companion] 消息解析失败:', err)
+                }
             }
-            ws.onclose = (e) => console.log(`[Companion] WS 关闭: ${e.code}`)
+
+            ws.onclose = (e) => {
+                console.log(`[Companion] WS 关闭: code=${e.code} reason=${e.reason}`)
+                if (!destroyed) {
+                    // 非主动断开，尝试重连
+                    setTimeout(() => {
+                        if (!destroyed && (!ws || ws.readyState === WebSocket.CLOSED)) {
+                            console.log('[Companion] 尝试重连...')
+                            connectWS().catch(e => console.error('[Companion] 重连失败:', e))
+                        }
+                    }, 3000)
+                }
+            }
+
+            // 超时处理
+            setTimeout(() => {
+                if (ws && ws.readyState === WebSocket.CONNECTING) {
+                    console.error('[Companion] WS 连接超时')
+                    ws.close()
+                    reject(new Error('WebSocket 连接超时'))
+                }
+            }, 10000)
         })
     }
 
@@ -351,8 +395,13 @@
 
     async function startMic() {
         console.log('[Companion] 请求麦克风...')
-        mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
-        console.log('[Companion] 麦克风已获取')
+        try {
+            mediaStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+            console.log('[Companion] 麦克风已获取')
+        } catch (e) {
+            console.error('[Companion] 麦克风获取失败:', e.name, e.message)
+            throw new Error('麦克风权限被拒绝或不可用: ' + e.message)
+        }
 
         // 尝试使用 16kHz，如果不支持则使用默认采样率
         try {
@@ -364,10 +413,20 @@
         actualSampleRate = audioCtx.sampleRate
         console.log(`[Companion] AudioContext: ${actualSampleRate}Hz (目标: ${TARGET_SAMPLE_RATE}Hz)`)
 
-        if (audioCtx.state === 'suspended') await audioCtx.resume()
+        if (audioCtx.state === 'suspended') {
+            console.log('[Companion] AudioContext 暂停，恢复中...')
+            await audioCtx.resume()
+        }
 
         // 用 vad-processor 检测人声，只有人声才发送音频
-        await audioCtx.audioWorklet.addModule('/vad-processor.js')
+        console.log('[Companion] 加载 VAD 处理器...')
+        try {
+            await audioCtx.audioWorklet.addModule('/vad-processor.js')
+            console.log('[Companion] VAD 处理器加载成功')
+        } catch (e) {
+            console.error('[Companion] VAD 处理器加载失败:', e)
+            throw new Error('语音检测模块加载失败: ' + e.message)
+        }
         const source = audioCtx.createMediaStreamSource(mediaStream)
         workletNode = new AudioWorkletNode(audioCtx, 'vad-processor')
 
@@ -465,29 +524,28 @@
             setState(STATE.IDLE)
         },
 
+        getState() {
+            return state;
+        },
+
         sendText(text) {
-            const SHAPE_NAMES = { circle: '圆形', rectangle: '矩形', triangle: '三角形', line: '直线', star: '星形', diamond: '菱形', arrow: '箭头', hexagon: '六边形', svg_path: 'SVG路径', vector: '矢量图' }
-            const SIZE_LABELS = { small: '小(40px)', medium: '中(80px)', large: '大(140px)' }
-            const objs = VC.State.objects || []
-            const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800
-            const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600
+            const objs = VCTools ? VCTools.getObjects() : []
+            const canvasW = VCTools ? VCTools.canvas.width : 800
+            const canvasH = VCTools ? VCTools.canvas.height : 600
 
             const ctx = objs.length === 0 ? '画布为空' : objs.map((o, i) => {
-                const shape = SHAPE_NAMES[o.shape] || o.shape
+                const typeName = o.type === 'rect' ? '矩形' : o.type === 'ellipse' ? '椭圆' : o.type === 'i-text' ? '文字' : o.type === 'group' ? '编组' : o.type || '对象'
                 const tag = o.tag ? `"${o.tag}"` : `#${i + 1}`
-                const x = o.x !== undefined ? o.x.toFixed(3) : '?'
-                const y = o.y !== undefined ? o.y.toFixed(3) : '?'
-                const size = typeof o.size === 'number' ? `${o.size}px` : (SIZE_LABELS[o.size] || o.size)
-                const color = o.color && o.color !== 'none' ? o.color : '无填充'
-                const stroke = o.stroke && o.stroke !== 'none' ? `描边${o.stroke}` : ''
-                const rot = o.rotation ? `旋转${o.rotation}°` : ''
+                const x = Math.round(o.left || 0)
+                const y = Math.round(o.top || 0)
+                const w = Math.round((o.width || 0) * (o.scaleX || 1))
+                const h = Math.round((o.height || 0) * (o.scaleY || 1))
+                const color = o.fill && o.fill !== 'transparent' ? o.fill : '无填充'
+                const stroke = o.stroke && o.stroke !== 'transparent' ? `描边${o.stroke}` : ''
+                const rot = o.angle ? `旋转${Math.round(o.angle)}°` : ''
                 const opacity = o.opacity !== undefined && o.opacity !== 1 ? `透明度${(o.opacity * 100).toFixed(0)}%` : ''
 
-                // 计算屏幕像素位置
-                const px = o.x !== undefined ? Math.round(o.x * canvasW) : '?'
-                const py = o.y !== undefined ? Math.round(o.y * canvasH) : '?'
-
-                return `[${tag}] ${shape} pos(${x},${y})≈${px},${py}px size=${size} color=${color} ${stroke} ${rot} ${opacity}`.trim()
+                return `[${tag}] ${typeName} pos(${x},${y}) size(${w}x${h}) color=${color} ${stroke} ${rot} ${opacity}`.trim()
             }).join('\n')
 
             // 计算对象之间的空间关系

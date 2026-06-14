@@ -428,9 +428,12 @@
          */
         _bindEvents() {
             const container = canvasEl.parentElement;
+            // 查找 drawCanvas（在 mainCanvas 上面，z-index 更高）
+            const drawCanvas = document.getElementById('drawCanvas') || canvasEl;
+            const eventTarget = drawCanvas; // 事件绑定到 drawCanvas，因为它在最上层
 
             // 鼠标滚轮缩放
-            container.addEventListener('wheel', (e) => {
+            eventTarget.addEventListener('wheel', (e) => {
                 e.preventDefault();
                 const delta = e.deltaY > 0 ? 0.9 : 1.1;
                 const rect = canvasEl.getBoundingClientRect();
@@ -458,10 +461,10 @@
 
                 this._updateUI();
             };
-            container.addEventListener('mousemove', onMouseMove);
+            eventTarget.addEventListener('mousemove', onMouseMove);
 
             // 鼠标按下（中键或空格+左键）
-            container.addEventListener('mousedown', (e) => {
+            eventTarget.addEventListener('mousedown', (e) => {
                 if (e.button === 1 || (e.button === 0 && spacePressed)) {
                     e.preventDefault();
                     isPanning = true;
@@ -469,12 +472,12 @@
                     panStartY = mouseScreenY;
                     panOffsetStartX = viewOffsetX;
                     panOffsetStartY = viewOffsetY;
-                    container.style.cursor = 'grabbing';
+                    eventTarget.style.cursor = 'grabbing';
                     // 绑定 document 级别事件，确保鼠标移出画布仍能平移
                     document.addEventListener('mousemove', onMouseMove);
                     const onUp = () => {
                         isPanning = false;
-                        container.style.cursor = '';
+                        eventTarget.style.cursor = '';
                         document.removeEventListener('mousemove', onMouseMove);
                         document.removeEventListener('mouseup', onUp);
                     };
@@ -483,10 +486,10 @@
             });
 
             // 鼠标释放（容器内非平移状态的清理）
-            container.addEventListener('mouseup', () => {
+            eventTarget.addEventListener('mouseup', () => {
                 if (isPanning) {
                     isPanning = false;
-                    container.style.cursor = '';
+                    eventTarget.style.cursor = '';
                 }
             });
         },
@@ -495,10 +498,11 @@
          * 绑定键盘事件
          */
         _bindKeys() {
+            const drawCanvas = document.getElementById('drawCanvas') || canvasEl;
             document.addEventListener('keydown', (e) => {
                 if (e.code === 'Space' && !e.repeat) {
                     spacePressed = true;
-                    canvasEl.parentElement.style.cursor = 'grab';
+                    drawCanvas.style.cursor = 'grab';
                 }
                 // Ctrl + 加号/减号缩放
                 if (e.ctrlKey || e.metaKey) {
@@ -530,7 +534,7 @@
             document.addEventListener('keyup', (e) => {
                 if (e.code === 'Space') {
                     spacePressed = false;
-                    canvasEl.parentElement.style.cursor = '';
+                    drawCanvas.style.cursor = '';
                 }
             });
         },

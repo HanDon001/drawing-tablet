@@ -1,6 +1,6 @@
 /**
  * VC.Vector — 矢量图形生成器
- * 基于 Path2D API，支持参数化矢量图形和 SVG 路径解析
+ * 返回 SVG 路径字符串，供 Fabric.js 使用
  */
 (function () {
     'use strict';
@@ -10,149 +10,136 @@
          * 心形：贝塞尔曲线
          */
         heart(size) {
-            const p = new Path2D();
             const s = size * 0.01;
-            p.moveTo(0, -20 * s);
-            p.bezierCurveTo(-40 * s, -60 * s, -80 * s, -10 * s, 0, 50 * s);
-            p.moveTo(0, -20 * s);
-            p.bezierCurveTo(40 * s, -60 * s, 80 * s, -10 * s, 0, 50 * s);
-            return p;
+            return `M 0 ${-20 * s} C ${-40 * s} ${-60 * s}, ${-80 * s} ${-10 * s}, 0 ${50 * s} M 0 ${-20 * s} C ${40 * s} ${-60 * s}, ${80 * s} ${-10 * s}, 0 ${50 * s}`;
         },
 
         /**
          * 螺旋线
          */
         spiral(size) {
-            const p = new Path2D();
             const s = size * 0.01;
+            let path = '';
             for (let i = 0; i < 200; i++) {
                 const angle = (i / 200) * 4 * Math.PI * 2;
                 const r = (i / 200) * 50 * s;
                 const px = Math.cos(angle) * r;
                 const py = Math.sin(angle) * r;
-                i === 0 ? p.moveTo(px, py) : p.lineTo(px, py);
+                path += (i === 0 ? 'M' : 'L') + ` ${px} ${py} `;
             }
-            return p;
+            return path;
         },
 
         /**
          * 波浪线
          */
         wave(size) {
-            const p = new Path2D();
             const s = size * 0.01;
-            p.moveTo(-80 * s, 0);
+            let path = `M ${-80 * s} 0`;
             for (let i = 0; i <= 160; i += 2) {
-                p.lineTo((-80 + i) * s, Math.sin(i * 0.1) * 20 * s);
+                path += ` L ${(-80 + i) * s} ${Math.sin(i * 0.1) * 20 * s}`;
             }
-            return p;
+            return path;
         },
 
         /**
          * 齿轮
          */
         gear(size) {
-            const p = new Path2D();
             const s = size * 0.01;
             const teeth = 8, outer = 40 * s, inner = 28 * s;
+            let path = '';
             for (let i = 0; i < teeth; i++) {
                 const a1 = (i / teeth) * Math.PI * 2;
                 const a2 = ((i + 0.3) / teeth) * Math.PI * 2;
                 const a3 = ((i + 0.5) / teeth) * Math.PI * 2;
                 const a4 = ((i + 0.8) / teeth) * Math.PI * 2;
-                if (i === 0) p.moveTo(Math.cos(a1) * inner, Math.sin(a1) * inner);
-                else p.lineTo(Math.cos(a1) * inner, Math.sin(a1) * inner);
-                p.lineTo(Math.cos(a2) * outer, Math.sin(a2) * outer);
-                p.lineTo(Math.cos(a3) * outer, Math.sin(a3) * outer);
-                p.lineTo(Math.cos(a4) * inner, Math.sin(a4) * inner);
+                if (i === 0) path += `M ${Math.cos(a1) * inner} ${Math.sin(a1) * inner}`;
+                else path += ` L ${Math.cos(a1) * inner} ${Math.sin(a1) * inner}`;
+                path += ` L ${Math.cos(a2) * outer} ${Math.sin(a2) * outer}`;
+                path += ` L ${Math.cos(a3) * outer} ${Math.sin(a3) * outer}`;
+                path += ` L ${Math.cos(a4) * inner} ${Math.sin(a4) * inner}`;
             }
-            p.closePath();
-            return p;
+            path += ' Z';
+            return path;
         },
 
         /**
          * 分形树
          */
         tree(size) {
-            const p = new Path2D();
             const s = size * 0.01;
+            let path = '';
             function branch(bx, by, len, angle, depth) {
                 if (depth === 0) return;
                 const ex = bx + Math.cos(angle) * len;
                 const ey = by + Math.sin(angle) * len;
-                p.moveTo(bx, by);
-                p.lineTo(ex, ey);
+                path += ` M ${bx} ${by} L ${ex} ${ey}`;
                 branch(ex, ey, len * 0.7, angle - 0.5, depth - 1);
                 branch(ex, ey, len * 0.7, angle + 0.5, depth - 1);
             }
             branch(0, 40 * s, 40 * s, -Math.PI / 2, 6);
-            return p;
+            return path;
         },
 
         /**
-         * 云朵：多个圆组合
+         * 云朵
          */
         cloud(size) {
-            const p = new Path2D();
             const s = size * 0.01;
-            [[0, 0, 30], [-25, 5, 22], [25, 5, 22], [-12, -12, 18], [12, -12, 18]].forEach(([cx, cy, r]) => {
-                p.moveTo(cx * s + r * s, cy * s);
-                p.arc(cx * s, cy * s, r * s, 0, Math.PI * 2);
+            const circles = [[0, 0, 30], [-25, 5, 22], [25, 5, 22], [-12, -12, 18], [12, -12, 18]];
+            let path = '';
+            circles.forEach(([cx, cy, r]) => {
+                const x = cx * s, y = cy * s, rad = r * s;
+                path += ` M ${x + rad} ${y}`;
+                path += ` A ${rad} ${rad} 0 1 0 ${x - rad} ${y}`;
+                path += ` A ${rad} ${rad} 0 1 0 ${x + rad} ${y}`;
             });
-            return p;
+            return path;
         },
 
         /**
          * 闪电
          */
         lightning(size) {
-            const p = new Path2D();
             const s = size * 0.01;
-            p.moveTo(0, -50 * s);
-            p.lineTo(15 * s, -10 * s);
-            p.lineTo(5 * s, -10 * s);
-            p.lineTo(20 * s, 50 * s);
-            p.lineTo(-5 * s, 10 * s);
-            p.lineTo(5 * s, 10 * s);
-            p.closePath();
-            return p;
+            return `M 0 ${-50 * s} L ${15 * s} ${-10 * s} L ${5 * s} ${-10 * s} L ${20 * s} ${50 * s} L ${-5 * s} ${10 * s} L ${5 * s} ${10 * s} Z`;
         },
 
         /**
-         * 花朵：花瓣 + 花心
+         * 花朵
          */
         flower(size) {
-            const p = new Path2D();
             const s = size * 0.01;
             const petals = 5, r = 25 * s;
+            let path = '';
             for (let i = 0; i < petals; i++) {
                 const a = (i / petals) * Math.PI * 2 - Math.PI / 2;
                 const cx = Math.cos(a) * r * 0.6;
                 const cy = Math.sin(a) * r * 0.6;
-                p.moveTo(cx + 12 * s, cy);
-                p.arc(cx, cy, 12 * s, 0, Math.PI * 2);
+                const pr = 12 * s;
+                path += ` M ${cx + pr} ${cy}`;
+                path += ` A ${pr} ${pr} 0 1 0 ${cx - pr} ${cy}`;
+                path += ` A ${pr} ${pr} 0 1 0 ${cx + pr} ${cy}`;
             }
-            p.moveTo(10 * s, 0);
-            p.arc(0, 0, 10 * s, 0, Math.PI * 2);
-            return p;
+            // 花心
+            const cr = 10 * s;
+            path += ` M ${cr} 0`;
+            path += ` A ${cr} ${cr} 0 1 0 ${-cr} 0`;
+            path += ` A ${cr} ${cr} 0 1 0 ${cr} 0`;
+            return path;
         },
 
         /**
          * 弯曲箭头
          */
         arrow_curve(size) {
-            const p = new Path2D();
             const s = size * 0.01;
-            p.moveTo(-50 * s, 0);
-            p.quadraticCurveTo(0, -40 * s, 50 * s, 0);
-            p.lineTo(35 * s, -10 * s);
-            p.moveTo(50 * s, 0);
-            p.lineTo(35 * s, 10 * s);
-            return p;
+            return `M ${-50 * s} 0 Q 0 ${-40 * s}, ${50 * s} 0 L ${35 * s} ${-10 * s} M ${50 * s} 0 L ${35 * s} ${10 * s}`;
         },
     };
 
-    // ── 公开 API ──────────────────────────────────────
+    // ── 公开 API ──
 
     VC.Vector = {
         /**
@@ -163,10 +150,10 @@
         },
 
         /**
-         * 生成矢量 Path2D
+         * 生成 SVG 路径字符串
          * @param {string} type - 图形类型
          * @param {number} size - 基础尺寸(像素)
-         * @returns {Path2D|null}
+         * @returns {string|null} SVG path d 属性
          */
         generate(type, size) {
             const gen = generators[type];
@@ -178,17 +165,12 @@
         },
 
         /**
-         * 解析 SVG 路径字符串
+         * 解析 SVG 路径字符串（直接返回）
          * @param {string} svgD - SVG path d 属性
-         * @returns {Path2D|null}
+         * @returns {string}
          */
         parseSVG(svgD) {
-            try {
-                return new Path2D(svgD);
-            } catch (e) {
-                console.warn('[Vector] SVG 路径解析失败:', e);
-                return null;
-            }
+            return svgD;
         },
 
         /**

@@ -4,13 +4,12 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>VoiceCanvas - 专业语音绘图控制台</title>
+    <title>VoiceCanvas - Figma级语音绘图控制台</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link
-        href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap"
-        rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@400;600;700&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/fabric.js/5.3.1/fabric.min.js"></script>
     <script>
         tailwind.config = {
             theme: {
@@ -18,17 +17,35 @@
                     colors: {
                         'deep-brown': '#7A4F28', 'mid-brown': '#9B6A3A', 'light-brown': '#E8D9C7',
                         'warm-orange': '#E69F56', 'cream': '#F8F5F1', 'body-text': '#333333',
+                        'figma-blue': '#4C84FF',
                     }, fontFamily: { 'display': ['Playfair Display', 'serif'], 'body': ['Noto Sans SC', 'sans-serif'] }
                 }
             }
         }
     </script>
     <link rel="stylesheet" href="css/main.css">
-    <style>/* CSS moved to css/main.css */</style>
+    <style>
+        /* Fabric.js canvas 容器定位 */
+        .canvas-container { position: absolute !important; inset: 0 !important; z-index: 2 !important; }
+        /* canvas 元素必须填满容器，否则圆形变椭圆 */
+        .canvas-container .lower-canvas,
+        .canvas-container .upper-canvas {
+            position: absolute !important;
+            left: 0 !important;
+            top: 0 !important;
+        }
+        .prop-row { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+        .prop-label { font-size: 10px; color: #9B6A3A; width: 28px; flex-shrink: 0; text-align: right; font-weight: 600; }
+        body.ai-mode .prop-label, body.multi-mode .prop-label { color: #7a7a9a; }
+        .prop-input { flex: 1; background: #FAFAF8; border: 1px solid #E8D9C7; border-radius: 4px; padding: 3px 6px; font-size: 11px; width: 100%; outline: none; font-family: 'Noto Sans SC', sans-serif; }
+        body.ai-mode .prop-input, body.multi-mode .prop-input { background: var(--ai-card-alt); border-color: var(--ai-border); color: var(--ai-text); }
+        .prop-input:focus { border-color: #4C84FF; box-shadow: 0 0 0 2px rgba(76,132,255,0.15); }
+        .layer-item.selected { background-color: #E8D9C7; border-color: #D1C4B5; }
+        body.ai-mode .layer-item.selected, body.multi-mode .layer-item.selected { background-color: #e8e6f0; border-color: rgba(0,0,0,0.06); }
+    </style>
 </head>
 
 <body class="h-screen overflow-hidden flex flex-col">
-
     <canvas id="bgParticles"></canvas>
     <div id="superTransition"><canvas id="transCanvas"></canvas></div>
     <div class="flash-overlay" id="flashOverlay"></div>
@@ -37,11 +54,9 @@
     <!-- 顶部导航 -->
     <header class="top-header text-white px-4 py-2 flex items-center justify-between shadow-lg z-50 flex-shrink-0">
         <div class="flex items-center gap-3">
-            <button class="nav-menu-btn" onclick="openMenu()"
-                title="功能菜单"><span></span><span></span><span></span><span></span></button>
+            <button class="nav-menu-btn" onclick="VC.App.openMenu()" title="功能菜单"><span></span><span></span><span></span><span></span></button>
             <div class="w-px h-4 bg-white/20"></div>
-            <div class="w-7 h-7 rounded-full bg-warm-orange flex items-center justify-center" style="cursor:pointer;"><i
-                    class="fas fa-palette text-xs"></i></div>
+            <div class="w-7 h-7 rounded-full bg-warm-orange flex items-center justify-center" style="cursor:pointer;"><i class="fas fa-palette text-xs"></i></div>
             <h1 class="font-display text-base tracking-wide">VoiceCanvas</h1>
             <span class="mode-tag" id="modeTag">PRO</span>
         </div>
@@ -56,200 +71,117 @@
     <main class="flex-1 flex overflow-hidden relative z-10">
         <!-- 左侧工具栏 -->
         <aside class="left-sidebar w-60 flex flex-col flex-shrink-0 text-xs overflow-y-auto">
+            <!-- Figma 核心工具组 -->
             <div class="sidebar-section">
-                <div class="section-header" onclick="togglePanel('drawToolsPanel')">
-                    <span class="section-title"><i class="fas fa-pen-nib mr-1"></i>Draw Tools</span>
-                    <i class="fas fa-chevron-right section-arrow open" id="drawToolsPanelArrow"></i>
+                <div class="section-header" onclick="VC.App.togglePanel('figmaToolsPanel')">
+                    <span class="section-title"><i class="fas fa-tools mr-1"></i>Figma Tools</span>
+                    <i class="fas fa-chevron-right section-arrow open" id="figmaToolsPanelArrow"></i>
                 </div>
-                <div class="section-content" id="drawToolsPanel">
+                <div class="section-content" id="figmaToolsPanel">
                     <div class="grid grid-cols-4 gap-1.5 mb-2">
-                        <button onclick="setDrawTool('select')" class="tool-btn" data-tool="select"><i
-                                class="fas fa-mouse-pointer text-sm mb-0.5"></i><span class="text-[9px]">鼠标</span></button>
-                        <button onclick="setDrawTool('pen')" class="tool-btn" data-tool="pen"><i
-                                class="fas fa-pen text-sm mb-0.5"></i><span class="text-[9px]">画笔</span></button>
-                        <button onclick="setDrawTool('eraser')" class="tool-btn" data-tool="eraser"><i
-                                class="fas fa-eraser text-sm mb-0.5"></i><span class="text-[9px]">橡皮擦</span></button>
-                        <button onclick="setDrawTool('fill')" class="tool-btn" data-tool="fill"><i
-                                class="fas fa-fill-drip text-sm mb-0.5"></i><span class="text-[9px]">填充</span></button>
+                        <button onclick="VCTools.setTool('select')" class="tool-btn active" data-tool="select" title="选择 (V)"><i class="fas fa-mouse-pointer text-sm mb-0.5"></i><span class="text-[9px]">选择</span></button>
+                        <button onclick="VCTools.setTool('rect')" class="tool-btn" data-tool="rect" title="矩形 (R)"><i class="far fa-square text-sm mb-0.5"></i><span class="text-[9px]">矩形</span></button>
+                        <button onclick="VCTools.setTool('ellipse')" class="tool-btn" data-tool="ellipse" title="椭圆 (O)"><i class="far fa-circle text-sm mb-0.5"></i><span class="text-[9px]">圆形</span></button>
+                        <button onclick="VCTools.setTool('text')" class="tool-btn" data-tool="text" title="文字 (T)"><i class="fas fa-font text-sm mb-0.5"></i><span class="text-[9px]">文字</span></button>
+                        <button onclick="VCTools.setTool('pen')" class="tool-btn" data-tool="pen" title="画笔 (P)"><i class="fas fa-pen text-sm mb-0.5"></i><span class="text-[9px]">画笔</span></button>
+                        <button onclick="VCTools.setTool('line')" class="tool-btn" data-tool="line" title="直线 (L)"><i class="fas fa-minus text-sm mb-0.5 rotate-45"></i><span class="text-[9px]">直线</span></button>
+                        <button onclick="VCTools.groupSelected()" class="tool-btn" title="编组 (Ctrl+G)"><i class="fas fa-object-group text-sm mb-0.5"></i><span class="text-[9px]">编组</span></button>
+                        <button onclick="VCTools.ungroupSelected()" class="tool-btn" title="解组 (Ctrl+Shift+G)"><i class="fas fa-object-ungroup text-sm mb-0.5"></i><span class="text-[9px]">解组</span></button>
                     </div>
                     <div class="mb-2">
-                        <label class="text-[10px] block mb-1" style="color:inherit;opacity:0.5;">Brush Size: <span
-                                id="brushSizeLabel">3</span>px</label>
-                        <input type="range" id="brushSizeSlider" min="1" max="50" value="3"
-                            class="w-full h-1.5 rounded-full appearance-none cursor-pointer"
-                            style="background:rgba(128,128,128,0.2);" oninput="setBrushSize(this.value)">
+                        <label class="text-[10px] block mb-1" style="color:inherit;opacity:0.5;">Brush: <span id="brushSizeLabel">3</span>px</label>
+                        <input type="range" id="brushSizeSlider" min="1" max="50" value="3" class="w-full h-1.5 rounded-full appearance-none cursor-pointer" style="background:rgba(128,128,128,0.2);" oninput="VCTools.setBrushSize(this.value)">
                     </div>
                     <div>
-                        <div class="color-row" style="margin-bottom:0;"><span class="color-label">Brush</span>
-                            <div class="color-swatches" id="brushSwatches"></div>
-                        </div>
+                        <div class="color-row" style="margin-bottom:0;"><span class="color-label">Fill</span><div class="color-swatches" id="fillSwatches"></div></div>
                     </div>
                 </div>
             </div>
+
+            <!-- Figma 属性面板 -->
             <div class="sidebar-section">
-                <div class="section-header" onclick="togglePanel('shapesPanel')">
-                    <span class="section-title">Shapes</span>
-                    <i class="fas fa-chevron-right section-arrow open" id="shapesPanelArrow"></i>
+                <div class="section-header" onclick="VC.App.togglePanel('propsPanel')">
+                    <span class="section-title"><i class="fas fa-sliders-h mr-1"></i>Properties</span>
+                    <i class="fas fa-chevron-right section-arrow open" id="propsPanelArrow"></i>
                 </div>
-                <div class="section-content" id="shapesPanel">
-                    <div class="grid grid-cols-4 gap-1.5">
-                        <button onclick="toolAction('draw','circle')" class="tool-btn active" data-shape="circle"><i
-                                class="far fa-circle text-sm mb-0.5"></i><span class="text-[9px]">圆形</span></button>
-                        <button onclick="toolAction('draw','rectangle')" class="tool-btn" data-shape="rectangle"><i
-                                class="far fa-square text-sm mb-0.5"></i><span class="text-[9px]">矩形</span></button>
-                        <button onclick="toolAction('draw','triangle')" class="tool-btn" data-shape="triangle"><svg
-                                class="w-3.5 h-3.5 mb-0.5" viewBox="0 0 24 24" fill="none" stroke="currentColor"
-                                stroke-width="2">
-                                <path d="M12 3L22 21H2L12 3Z" />
-                            </svg><span class="text-[9px]">三角</span></button>
-                        <button onclick="toolAction('draw','line')" class="tool-btn" data-shape="line"><i
-                                class="fas fa-minus text-sm mb-0.5 rotate-45"></i><span
-                                class="text-[9px]">直线</span></button>
-                        <button onclick="toolAction('draw','star')" class="tool-btn" data-shape="star"><i
-                                class="far fa-star text-sm mb-0.5"></i><span class="text-[9px]">星形</span></button>
-                        <button onclick="toolAction('draw','diamond')" class="tool-btn" data-shape="diamond"><i
-                                class="far fa-square text-sm mb-0.5 rotate-45 scale-75"></i><span
-                                class="text-[9px]">菱形</span></button>
-                        <button onclick="toolAction('draw','arrow')" class="tool-btn" data-shape="arrow"><i
-                                class="fas fa-long-arrow-alt-right text-sm mb-0.5"></i><span
-                                class="text-[9px]">箭头</span></button>
-                        <button onclick="toolAction('draw','hexagon')" class="tool-btn" data-shape="hexagon"><i
-                                class="fas fa-hexagon-xmark text-sm mb-0.5"></i><span
-                                class="text-[9px]">六边</span></button>
-                    </div>
-                </div>
-            </div>
-            <div class="sidebar-section">
-                <div class="section-header" onclick="togglePanel('appearancePanel')">
-                    <span class="section-title">Appearance</span>
-                    <i class="fas fa-chevron-right section-arrow open" id="appearancePanelArrow"></i>
-                </div>
-                <div class="section-content space-y-3" id="appearancePanel">
-                    <div>
-                        <div class="color-row"><span class="color-label">Fill</span>
-                            <div class="color-swatches" id="fillSwatches"></div>
+                <div class="section-content" id="propsPanel">
+                    <div id="noSelectionProps" class="text-center text-[10px] py-4" style="opacity:0.4;">选中图形以编辑属性</div>
+                    <div id="activeSelectionProps" style="display:none;">
+                        <div class="grid grid-cols-2 gap-x-2 gap-y-1">
+                            <div class="prop-row"><span class="prop-label">X</span><input type="number" id="propX" class="prop-input" onchange="VCTools.updateProp('left', this.value)"></div>
+                            <div class="prop-row"><span class="prop-label">Y</span><input type="number" id="propY" class="prop-input" onchange="VCTools.updateProp('top', this.value)"></div>
+                            <div class="prop-row"><span class="prop-label">W</span><input type="number" id="propW" class="prop-input" onchange="VCTools.updateScaledWidth(this.value)"></div>
+                            <div class="prop-row"><span class="prop-label">H</span><input type="number" id="propH" class="prop-input" onchange="VCTools.updateScaledHeight(this.value)"></div>
+                            <div class="prop-row"><span class="prop-label">R</span><input type="number" id="propAngle" class="prop-input" onchange="VCTools.updateProp('angle', this.value)"></div>
+                            <div class="prop-row"><span class="prop-label">Opa</span><input type="number" id="propOpacity" class="prop-input" min="0" max="1" step="0.1" onchange="VCTools.updateProp('opacity', this.value)"></div>
                         </div>
-                        <div class="color-row" style="margin-bottom:0;"><span class="color-label">Line</span>
-                            <div class="color-swatches" id="strokeSwatches"></div>
-                        </div>
-                    </div>
-                    <div><label class="text-[10px] block mb-1.5" style="color:inherit;opacity:0.5;">Size</label>
-                        <div class="capsule-group">
-                            <div onclick="toolAction('size','small')" class="capsule-btn" data-size="small">S</div>
-                            <div onclick="toolAction('size','medium')" class="capsule-btn active" data-size="medium">M
+                        <div class="mt-2 pt-2 border-t border-light-brown">
+                            <div class="prop-row"><span class="prop-label">Fill</span><input type="color" id="propFill" class="prop-input h-7 p-0.5 cursor-pointer" onchange="VCTools.updateProp('fill', this.value)"></div>
+                            <div class="prop-row"><span class="prop-label">Strk</span><input type="color" id="propStroke" class="prop-input h-7 p-0.5 cursor-pointer" onchange="VCTools.updateProp('stroke', this.value)"></div>
+                            <div class="prop-row"><span class="prop-label">Rx</span><input type="number" id="propRx" class="prop-input" min="0" onchange="VCTools.updateProp('rx', this.value)"></div>
+                            <div class="prop-row">
+                                <span class="prop-label">Shd</span>
+                                <select id="propShadow" class="prop-input" onchange="VCTools.updateShadow(this.value)">
+                                    <option value="none">无</option>
+                                    <option value="sm">小阴影</option>
+                                    <option value="md">中阴影</option>
+                                    <option value="lg">大阴影</option>
+                                </select>
                             </div>
-                            <div onclick="toolAction('size','large')" class="capsule-btn" data-size="large">L</div>
-                        </div>
-                    </div>
-                    <div><label class="text-[10px] block mb-1.5" style="color:inherit;opacity:0.5;">Opacity</label>
-                        <div class="capsule-group">
-                            <div onclick="toolAction('opacity','1')" class="capsule-btn active" data-opacity="1">100%
-                            </div>
-                            <div onclick="toolAction('opacity','0.7')" class="capsule-btn" data-opacity="0.7">70%</div>
-                            <div onclick="toolAction('opacity','0.4')" class="capsule-btn" data-opacity="0.4">40%</div>
                         </div>
                     </div>
                 </div>
             </div>
-            <div class="sidebar-section">
-                <div class="section-header" onclick="togglePanel('positionPanel')">
-                    <span class="section-title">Position</span>
-                    <i class="fas fa-chevron-right section-arrow open" id="positionPanelArrow"></i>
-                </div>
-                <div class="section-content" id="positionPanel">
-                    <div class="pos-grid w-20 mx-auto">
-                        <div class="pos-dot" onclick="toolAction('position','left_top')" data-pos="left_top"></div>
-                        <div class="pos-dot" onclick="toolAction('position','top')" data-pos="top"></div>
-                        <div class="pos-dot" onclick="toolAction('position','right_top')" data-pos="right_top"></div>
-                        <div class="pos-dot" onclick="toolAction('position','left')" data-pos="left"></div>
-                        <div class="pos-dot active" onclick="toolAction('position','center')" data-pos="center"></div>
-                        <div class="pos-dot" onclick="toolAction('position','right')" data-pos="right"></div>
-                        <div class="pos-dot" onclick="toolAction('position','left_bottom')" data-pos="left_bottom">
-                        </div>
-                        <div class="pos-dot" onclick="toolAction('position','bottom')" data-pos="bottom"></div>
-                        <div class="pos-dot" onclick="toolAction('position','right_bottom')" data-pos="right_bottom">
-                        </div>
-                    </div>
-                </div>
-            </div>
+
+            <!-- 图层面板 -->
             <div class="flex-1 flex flex-col min-h-0 mt-1">
-                <div class="section-header border-b-0 pb-0"><span class="section-title">Layers (<span
-                            id="objCountSide">0</span>)</span></div>
+                <div class="section-header border-b-0 pb-0"><span class="section-title">Layers (<span id="objCountSide">0</span>)</span></div>
                 <div class="flex-1 overflow-y-auto px-3 pb-2" id="objectList">
                     <div class="text-center text-[10px] py-6" style="opacity:0.3;">暂无图层</div>
                 </div>
             </div>
+
             <div class="bottom-btns">
                 <div class="flex gap-2">
-                    <button onclick="VC.Cmd.undo()" class="bottom-action-btn"><i
-                            class="fas fa-undo mr-1"></i>Undo</button>
-                    <button onclick="VC.Cmd.clearAll()" class="bottom-action-btn"><i
-                            class="fas fa-trash-alt mr-1"></i>Clear</button>
+                    <button onclick="VCTools.undo()" class="bottom-action-btn"><i class="fas fa-undo mr-1"></i>Undo</button>
+                    <button onclick="VCTools.clearAll()" class="bottom-action-btn"><i class="fas fa-trash-alt mr-1"></i>Clear</button>
                 </div>
             </div>
         </aside>
 
         <!-- 中间画布 -->
         <div class="canvas-area flex-1 p-4 flex flex-col relative">
-            <div class="canvas-wrap canvas-grid rounded-xl shadow-inner flex-1 relative overflow-hidden">
-                <canvas id="mainCanvas" class="absolute inset-0 w-full h-full"></canvas>
-                <canvas id="drawCanvas" class="absolute inset-0 w-full h-full z-10"></canvas>
-                <div id="emptyHint"
-                    class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none"
-                    style="opacity:0.25;">
+            <div class="canvas-wrap canvas-grid rounded-xl shadow-inner flex-1 relative overflow-hidden" id="canvasContainer">
+                <div id="emptyHint" class="absolute inset-0 flex flex-col items-center justify-center pointer-events-none" style="opacity:0.25;z-index:1;">
                     <i class="fas fa-microphone-lines text-5xl mb-3"></i>
                     <p class="text-sm font-medium">点击麦克风，或使用左侧工具</p>
                 </div>
             </div>
-            <!-- 画布状态栏：坐标 + 缩放 + 网格 -->
             <div class="flex items-center gap-3 mt-2 px-1 text-[10px] select-none" style="color:#9B6A3A;">
-                <span id="coordDisplay" class="font-mono">X:0 Y:0 (0.000,0.000)</span>
+                <span id="coordDisplay" class="font-mono">X:0 Y:0</span>
                 <span class="opacity-30">|</span>
                 <div class="flex items-center gap-1">
-                    <button onclick="VC.Viewport.setScale(VC.Viewport.getScale()/1.2)" class="w-5 h-5 rounded flex items-center justify-center hover:bg-black/5" title="缩小">−</button>
+                    <button onclick="VCTools.zoomOut()" class="w-5 h-5 rounded flex items-center justify-center hover:bg-black/5">−</button>
                     <span id="zoomDisplay" class="w-10 text-center font-mono">100%</span>
-                    <button onclick="VC.Viewport.setScale(VC.Viewport.getScale()*1.2)" class="w-5 h-5 rounded flex items-center justify-center hover:bg-black/5" title="放大">+</button>
-                    <button onclick="VC.Viewport.reset()" class="w-5 h-5 rounded flex items-center justify-center hover:bg-black/5 text-[9px]" title="重置">1:1</button>
+                    <button onclick="VCTools.zoomIn()" class="w-5 h-5 rounded flex items-center justify-center hover:bg-black/5">+</button>
+                    <button onclick="VCTools.resetZoom()" class="w-5 h-5 rounded flex items-center justify-center hover:bg-black/5 text-[9px]">1:1</button>
                 </div>
-                <span class="opacity-30">|</span>
-                <button id="gridToggleBtn" onclick="VC.Viewport.toggleGrid()" class="px-1.5 py-0.5 rounded hover:bg-black/5" title="网格 (G)">网格</button>
-                <button id="rulerToggleBtn" onclick="VC.Viewport.toggleRulers()" class="px-1.5 py-0.5 rounded hover:bg-black/5" title="标尺 (R)">标尺</button>
             </div>
-            <div id="aiPromptBar"
-                class="hidden flex items-center gap-2 mt-3 px-3 py-2 bg-white rounded-xl border border-light-brown shadow-sm">
-                <div class="flex items-center gap-1.5 text-[10px] font-bold" style="color:#E69F56;"><i
-                        class="fas fa-wand-magic-sparkles"></i><span>AI 绘图</span></div>
-                <input id="aiPromptInput" type="text" placeholder="描述你想画的内容..."
-                    class="flex-1 text-xs bg-cream/50 border border-light-brown rounded-lg px-3 py-1.5 outline-none" />
-                <button onclick="handleAIGenerate()"
-                    class="px-3 py-1.5 bg-warm-orange text-white rounded-lg text-[10px] font-bold hover:bg-warm-orange/80 transition-all"><i
-                        class="fas fa-wand-magic-sparkles"></i></button>
-            </div>
-            <div id="generatingOverlay"
-                class="hidden absolute inset-0 bg-white/80 flex flex-col items-center justify-center z-30 rounded-xl">
-                <div class="w-10 h-10 rounded-full animate-spin mb-3"
-                    style="border:3px solid #E69F56;border-top-color:transparent;"></div>
-                <p class="text-sm font-medium" style="color:#9B6A3A;">AI 正在创作中...</p>
-            </div>
+
+            <!-- 麦克风控制区 -->
             <div class="flex flex-col items-center absolute bottom-4 left-1/2 z-20 pointer-events-none" style="transform:translateX(-50%);width:fit-content;">
                 <div class="h-6 mb-2 flex items-center" id="normalTranscript" style="pointer-events:auto;">
-                    <span id="transcriptText"
-                        class="opacity-0 transition-opacity duration-300 px-3 py-0.5 rounded-full text-xs"
-                        style="background:rgba(232,217,199,0.3);"></span>
+                    <span id="transcriptText" class="opacity-0 transition-opacity duration-300 px-3 py-0.5 rounded-full text-xs" style="background:rgba(232,217,199,0.3);"></span>
                 </div>
-                <button id="micBtn"
-                    class="w-14 h-14 rounded-full text-white text-xl flex items-center justify-center shadow-lg transition-all duration-300 focus:outline-none relative z-10"
-                    style="pointer-events:auto;">
+                <button id="micBtn" class="w-14 h-14 rounded-full text-white text-xl flex items-center justify-center shadow-lg transition-all duration-300 focus:outline-none relative z-10" style="pointer-events:auto;">
                     <i class="fas fa-microphone"></i>
                 </button>
                 <div class="ai-control-area" id="aiControlArea" style="display:none;">
                     <div class="ai-text-bubble" id="aiTextBubble"><span id="aiTranscriptText">正在聆听...</span></div>
                     <div class="ai-viz-wrap" id="aiVizWrap">
                         <canvas id="vizCanvas" class="ai-viz-canvas" width="400" height="400"></canvas>
-                        <button class="ai-avatar-btn" id="aiAvatarBtn" onclick="toggleVoiceInAIMode()" oncontextmenu="showAIContextMenu(event)"><i
-                                class="fas fa-robot"></i></button>
+                        <button class="ai-avatar-btn" id="aiAvatarBtn" onclick="VC.AIMode.toggleVoiceInAIMode()" oncontextmenu="VC.AIMode.showAIContextMenu(event)"><i class="fas fa-robot"></i></button>
                     </div>
-                    <div class="ai-mode-label" id="aiModeLabel"><span class="dot"></span>AI 陪伴中</div>
                 </div>
             </div>
         </div>
@@ -258,43 +190,34 @@
         <aside class="right-chat w-80 flex flex-col flex-shrink-0">
             <div class="flex flex-col h-full">
                 <div class="chat-head">
-                    <div class="chat-head-avatar"><i class="fas fa-wand-magic-sparkles"
-                            style="font-size:13px;color:white;"></i></div>
+                    <div class="chat-head-avatar"><i class="fas fa-wand-magic-sparkles" style="font-size:13px;color:white;"></i></div>
                     <div class="flex-1 min-w-0">
                         <div class="chat-head-name text-white text-xs font-semibold" id="chatHeadName">小画助手</div>
                         <div class="flex items-center gap-1 mt-0.5">
                             <span class="w-1.5 h-1.5 rounded-full bg-green-400" id="chatStatusDot"></span>
-                            <span class="text-[9px] chat-head-status-text" style="color:rgba(255,255,255,0.6);"
-                                id="chatStatusText">在线就绪</span>
+                            <span class="text-[9px] chat-head-status-text" style="color:rgba(255,255,255,0.6);" id="chatStatusText">在线就绪</span>
                         </div>
                     </div>
-                    <button class="chat-head-btn" title="清空对话" onclick="clearChatHistory()"><i
-                            class="fas fa-broom"></i></button>
+                    <button class="chat-head-btn" title="清空对话" onclick="VC.Chat.clearChatHistory()"><i class="fas fa-broom"></i></button>
                 </div>
                 <div class="chat-quickbar">
-                    <button class="quick-tag" onclick="useQuick('画一个红色的圆')">红圆</button>
-                    <button class="quick-tag" onclick="useQuick('画一个蓝色矩形')">蓝方</button>
-                    <button class="quick-tag" onclick="useQuick('画一颗黄色星星')">黄星</button>
-                    <button class="quick-tag" onclick="useQuick('画一个绿色三角形')">绿三角</button>
-                    <button class="quick-tag" onclick="useQuick('撤销')">撤销</button>
-                    <button class="quick-tag" onclick="useQuick('清空画布')">清空</button>
+                    <button class="quick-tag" onclick="VC.Chat.useQuick('画一个红色的圆')">红圆</button>
+                    <button class="quick-tag" onclick="VC.Chat.useQuick('画一个带圆角的蓝色卡片')">蓝卡片</button>
+                    <button class="quick-tag" onclick="VC.Chat.useQuick('画一颗黄色星星')">黄星</button>
+                    <button class="quick-tag" onclick="VC.Chat.useQuick('撤销')">撤销</button>
                 </div>
                 <div class="chat-body" id="chatBody">
                     <div class="text-center py-8 px-4" id="chatEmpty">
-                        <div class="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center"
-                            style="background:linear-gradient(135deg,#F5EFE6,#E8D9C7);"><i
-                                class="fas fa-wand-magic-sparkles text-xl" style="color:#B8A898;"></i></div>
+                        <div class="w-12 h-12 rounded-2xl mx-auto mb-3 flex items-center justify-center" style="background:linear-gradient(135deg,#F5EFE6,#E8D9C7);"><i class="fas fa-wand-magic-sparkles text-xl" style="color:#B8A898;"></i></div>
                         <div class="text-xs font-semibold mb-1" style="color:#7A4F28;">开始创作对话</div>
-                        <div class="text-[10px] leading-relaxed" style="color:#B8A898;">说出或输入绘图指令<br>小画助手帮你实现</div>
+                        <div class="text-[10px] leading-relaxed" style="color:#B8A898;">说出或输入绘图指令<br>支持Figma级矢量操作</div>
                     </div>
                 </div>
                 <div class="chat-input-wrap">
                     <div class="chat-input-box">
-                        <textarea id="chatInput" rows="1" placeholder="输入绘图指令..." onkeydown="handleChatKey(event)"
-                            oninput="resizeInput()"></textarea>
+                        <textarea id="chatInput" rows="1" placeholder="输入绘图指令..." onkeydown="VC.Chat.handleChatKey(event)" oninput="VC.Chat.resizeInput()"></textarea>
                         <div class="flex gap-0.5 items-center flex-shrink-0 pb-0.5">
-                            <button class="inp-btn send" id="sendBtn" onclick="sendChatMessage()" title="发送" disabled><i
-                                    class="fas fa-paper-plane" style="font-size:10px;"></i></button>
+                            <button class="inp-btn send" id="sendBtn" onclick="VC.Chat.sendChatMessage()" title="发送" disabled><i class="fas fa-paper-plane" style="font-size:10px;"></i></button>
                         </div>
                     </div>
                 </div>
@@ -303,53 +226,41 @@
     </main>
 
     <!-- 功能菜单弹窗 -->
-    <div class="menu-overlay" id="menuOverlay" onclick="closeMenuOutside(event)">
-        <button class="menu-close" onclick="closeMenu()"><i class="fas fa-times"></i></button>
+    <div class="menu-overlay" id="menuOverlay" onclick="VC.App.closeMenuOutside(event)">
+        <button class="menu-close" onclick="VC.App.closeMenu()"><i class="fas fa-times"></i></button>
         <div class="menu-container">
             <div class="menu-header">
                 <h2>VoiceCanvas Studio</h2>
                 <p>选择一个功能模块开始体验</p>
             </div>
             <div class="menu-grid">
-                <div class="menu-card" onclick="launchModule('voice-draw')">
-                    <div class="menu-card-icon"
-                        style="background:linear-gradient(135deg,#FEE2E2,#FECACA);color:#DC2626;"><i
-                            class="fas fa-microphone-lines"></i></div>
+                <div class="menu-card" onclick="VC.App.launchModule('voice-draw')">
+                    <div class="menu-card-icon" style="background:linear-gradient(135deg,#FEE2E2,#FECACA);color:#DC2626;"><i class="fas fa-microphone-lines"></i></div>
                     <div class="menu-card-title">语音绘图</div>
                     <div class="menu-card-desc">用语音描述图形，AI 实时绘制</div>
                 </div>
-                <div class="menu-card" onclick="launchModule('vector-draw')">
-                    <div class="menu-card-icon"
-                        style="background:linear-gradient(135deg,#E0E7FF,#C7D2FE);color:#4F46E5;"><i
-                            class="fas fa-bezier-curve"></i></div>
+                <div class="menu-card" onclick="VC.App.launchModule('vector-draw')">
+                    <div class="menu-card-icon" style="background:linear-gradient(135deg,#E0E7FF,#C7D2FE);color:#4F46E5;"><i class="fas fa-bezier-curve"></i></div>
                     <div class="menu-card-title">矢量画图</div>
                     <div class="menu-card-desc">AI 绘制矢量图形，无损缩放</div>
                 </div>
-                <div class="menu-card" onclick="launchModule('optimize')">
-                    <div class="menu-card-icon"
-                        style="background:linear-gradient(135deg,#FEF3C7,#FDE68A);color:#D97706;"><i
-                            class="fas fa-wand-magic-sparkles"></i></div>
+                <div class="menu-card" onclick="VC.App.launchModule('optimize')">
+                    <div class="menu-card-icon" style="background:linear-gradient(135deg,#FEF3C7,#FDE68A);color:#D97706;"><i class="fas fa-wand-magic-sparkles"></i></div>
                     <div class="menu-card-title">智能优化</div>
                     <div class="menu-card-desc">自动调整布局与配色</div>
                 </div>
-                <div class="menu-card" id="agentCard" onclick="launchModule('agent')">
-                    <div class="menu-card-icon"
-                        style="background:linear-gradient(135deg,#EDE9FE,#DDD6FE);color:#7C3AED;"><i
-                            class="fas fa-robot"></i></div>
+                <div class="menu-card" id="agentCard" onclick="VC.App.launchModule('agent')">
+                    <div class="menu-card-icon" style="background:linear-gradient(135deg,#EDE9FE,#DDD6FE);color:#7C3AED;"><i class="fas fa-robot"></i></div>
                     <div class="menu-card-title">AI 陪伴</div>
                     <div class="menu-card-desc">持续对话，实时感知画布</div>
                 </div>
-                <div class="menu-card" id="multimodalCard" onclick="launchModule('multimodal')">
-                    <div class="menu-card-icon"
-                        style="background:linear-gradient(135deg,#FFEDD5,#FED7AA);color:#EA580C;"><i
-                            class="fas fa-layer-group"></i></div>
+                <div class="menu-card" id="multimodalCard" onclick="VC.App.launchModule('multimodal')">
+                    <div class="menu-card-icon" style="background:linear-gradient(135deg,#FFEDD5,#FED7AA);color:#EA580C;"><i class="fas fa-layer-group"></i></div>
                     <div class="menu-card-title">多模态</div>
                     <div class="menu-card-desc">语音+视觉+触控多模态融合</div>
                 </div>
-                <div class="menu-card" onclick="launchModule('demo')">
-                    <div class="menu-card-icon"
-                        style="background:linear-gradient(135deg,#FCE7F3,#FBCFE8);color:#DB2777;"><i
-                            class="fas fa-palette"></i></div>
+                <div class="menu-card" onclick="VC.App.launchModule('demo')">
+                    <div class="menu-card-icon" style="background:linear-gradient(135deg,#FCE7F3,#FBCFE8);color:#DB2777;"><i class="fas fa-palette"></i></div>
                     <div class="menu-card-title">创作演示</div>
                     <div class="menu-card-desc">观赏 AI 自动创作演示</div>
                 </div>
@@ -357,41 +268,55 @@
         </div>
     </div>
 
-    <!-- 右键操作菜单 -->
+    <!-- 对象右键菜单 -->
     <div class="ctx-menu" id="ctxMenu">
         <div class="ctx-menu-header" id="ctxMenuTitle"><i class="fas fa-shapes"></i> 图形</div>
-        <div class="ctx-menu-item" onclick="ctxMenuChangeColor()"><i class="fas fa-palette" style="color:#F59E0B;"></i> 填充颜色</div>
-        <div class="ctx-menu-item" onclick="ctxMenuRemoveStroke()"><i class="fas fa-border-none" style="color:#6B7280;"></i> 去除边框</div>
-        <div class="ctx-menu-item" onclick="ctxMenuAddStroke()"><i class="fas fa-square" style="color:#333;"></i> 添加边框</div>
+        <div class="ctx-menu-item" onclick="VCTools.ctxMenuSetColor()"><i class="fas fa-palette" style="color:#F59E0B;"></i> 填充颜色</div>
         <div class="ctx-menu-divider"></div>
         <div style="padding:2px 10px;font-size:10px;color:#999;">颜色</div>
         <div class="ctx-colors" id="ctxColorPalette"></div>
         <div class="ctx-menu-divider"></div>
         <div style="padding:2px 10px;font-size:10px;color:#999;">大小</div>
         <div style="display:flex;gap:4px;padding:4px 10px;align-items:center;">
-            <button class="ctx-size-btn" onclick="ctxMenuResize(40)" style="flex:1;padding:4px;border-radius:6px;border:1px solid #e5e1d8;background:#fff;font-size:11px;cursor:pointer;">S</button>
-            <button class="ctx-size-btn" onclick="ctxMenuResize(80)" style="flex:1;padding:4px;border-radius:6px;border:1px solid #e5e1d8;background:#fff;font-size:11px;cursor:pointer;">M</button>
-            <button class="ctx-size-btn" onclick="ctxMenuResize(140)" style="flex:1;padding:4px;border-radius:6px;border:1px solid #e5e1d8;background:#fff;font-size:11px;cursor:pointer;">L</button>
-            <button class="ctx-size-btn" onclick="ctxMenuResize(200)" style="flex:1;padding:4px;border-radius:6px;border:1px solid #e5e1d8;background:#fff;font-size:11px;cursor:pointer;">XL</button>
-        </div>
-        <div style="padding:2px 10px 6px;">
-            <input type="range" id="ctxSizeSlider" min="20" max="300" value="80" style="width:100%;accent-color:#7A4F28;"
-                oninput="ctxMenuResize(Number(this.value))">
+            <button class="ctx-size-btn" onclick="VCTools.ctxMenuResize(40)" style="flex:1;padding:4px;border-radius:6px;border:1px solid #e5e1d8;background:#fff;font-size:11px;cursor:pointer;">S</button>
+            <button class="ctx-size-btn" onclick="VCTools.ctxMenuResize(80)" style="flex:1;padding:4px;border-radius:6px;border:1px solid #e5e1d8;background:#fff;font-size:11px;cursor:pointer;">M</button>
+            <button class="ctx-size-btn" onclick="VCTools.ctxMenuResize(140)" style="flex:1;padding:4px;border-radius:6px;border:1px solid #e5e1d8;background:#fff;font-size:11px;cursor:pointer;">L</button>
+            <button class="ctx-size-btn" onclick="VCTools.ctxMenuResize(200)" style="flex:1;padding:4px;border-radius:6px;border:1px solid #e5e1d8;background:#fff;font-size:11px;cursor:pointer;">XL</button>
         </div>
         <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item" onclick="ctxMenuDuplicate()"><i class="fas fa-copy" style="color:#3B82F6;"></i> 复制</div>
-        <div class="ctx-menu-item danger" onclick="ctxMenuDelete()"><i class="fas fa-trash"></i> 删除</div>
+        <div style="padding:2px 10px;font-size:10px;color:#999;">图层</div>
+        <div class="ctx-menu-item" onclick="VCTools.bringToFront()"><i class="fas fa-arrow-up" style="color:#8B5CF6;"></i> 置顶</div>
+        <div class="ctx-menu-item" onclick="VCTools.sendToBack()"><i class="fas fa-arrow-down" style="color:#8B5CF6;"></i> 置底</div>
+        <div class="ctx-menu-divider"></div>
+        <div class="ctx-menu-item" onclick="VCTools.ctxMenuDuplicate()"><i class="fas fa-copy" style="color:#3B82F6;"></i> 复制</div>
+        <div class="ctx-menu-item danger" onclick="VCTools.ctxMenuDelete()"><i class="fas fa-trash"></i> 删除</div>
+        <div class="ctx-menu-divider"></div>
+        <div style="padding:2px 10px;font-size:10px;color:#999;">导出</div>
+        <div class="ctx-menu-item" onclick="VCTools.saveAsPNG()"><i class="fas fa-download" style="color:#10B981;"></i> 保存为 PNG</div>
+        <div class="ctx-menu-item" onclick="VCTools.saveAsSVG()"><i class="fas fa-file-code" style="color:#10B981;"></i> 保存为 SVG</div>
+    </div>
+
+    <!-- 画布空白区域右键菜单 -->
+    <div class="ctx-menu" id="canvasCtxMenu">
+        <div class="ctx-menu-header"><i class="fas fa-palette"></i> 画布</div>
+        <div class="ctx-menu-item" onclick="VCTools.canvasCtxSelectAll()"><i class="fas fa-object-group" style="color:#3B82F6;"></i> 全选</div>
+        <div class="ctx-menu-item" onclick="VCTools.undo()"><i class="fas fa-undo" style="color:#F59E0B;"></i> 撤销</div>
+        <div class="ctx-menu-divider"></div>
+        <div class="ctx-menu-item" onclick="VCTools.canvasCtxSavePNG()"><i class="fas fa-download" style="color:#10B981;"></i> 保存为 PNG</div>
+        <div class="ctx-menu-item" onclick="VCTools.canvasCtxSaveSVG()"><i class="fas fa-file-code" style="color:#10B981;"></i> 保存为 SVG</div>
+        <div class="ctx-menu-divider"></div>
+        <div class="ctx-menu-item danger" onclick="VCTools.canvasCtxClearAll()"><i class="fas fa-trash"></i> 清空画布</div>
     </div>
 
     <!-- AI 头像右键菜单 -->
     <div class="ctx-menu" id="aiCtxMenu">
         <div class="ctx-menu-header"><i class="fas fa-robot" style="color:#7C3AED;"></i> AI 画伴</div>
-        <div class="ctx-menu-item" id="aiCtxPause" onclick="toggleAIPause()"><i class="fas fa-pause" style="color:#F59E0B;"></i> 暂停聆听</div>
+        <div class="ctx-menu-item" id="aiCtxPause" onclick="VC.AIMode.toggleAIPause()"><i class="fas fa-pause" style="color:#F59E0B;"></i> 暂停聆听</div>
         <div class="ctx-menu-divider"></div>
-        <div class="ctx-menu-item danger" onclick="stopAIMode()"><i class="fas fa-stop"></i> 停止 AI 模式</div>
+        <div class="ctx-menu-item danger" onclick="VC.AIMode.stopAIMode()"><i class="fas fa-stop"></i> 停止 AI 模式</div>
     </div>
 
-    <!-- VC 框架 (核心模块) -->
+    <!-- VC 框架核心模块 -->
     <script src="js/vc.js"></script>
     <script src="js/state.js"></script>
     <script src="js/store.js"></script>
@@ -399,23 +324,16 @@
     <script src="js/voice.js"></script>
     <script src="js/companion.js"></script>
     <script src="js/cmd.js"></script>
-    <script src="js/canvas.js"></script>
-    <script src="js/drawing.js"></script>
     <script src="js/vector.js"></script>
-    <script src="js/viewport.js"></script>
     <script src="js/ai_draw.js"></script>
-    <script src="js/ui.js"></script>
-    <!-- VC 框架 (拆分模块) -->
-    <script src="js/shape-renderer.js"></script>
-    <script src="js/canvas-interaction.js"></script>
     <script src="js/chat.js"></script>
     <script src="js/speech.js"></script>
     <script src="js/local-commands.js"></script>
     <script src="js/effects.js"></script>
     <script src="js/ai-mode.js"></script>
-    <script src="js/app.js"></script>
-    <script>
-        /* 所有内联 JS 已拆分到独立模块文件 */    </script>
-</body>
 
+    <!-- Figma 工具系统 -->
+    <script src="js/figma-tools.js"></script>
+    <script src="js/app.js"></script>
+</body>
 </html>

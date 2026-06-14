@@ -93,6 +93,9 @@
                 case 'add_vector_shape':  return this.addVectorShape(params);
                 case 'draw_svg_path':     return this.drawSvgPath(params);
                 case 'generate_vector_art': return this.generateVectorArt(action);
+                // Fabric.js
+                case 'inject_fabric_json': return this.injectFabricJson(action);
+                case 'create_fabric_object': return this.createFabricObject(action);
                 default:
                     console.warn('[Cmd] 未知工具:', tool);
                     return false;
@@ -102,49 +105,74 @@
         // ─── 绘制 ─────────────────────────────────────
 
         /**
-         * 绘制图形
+         * 绘制图形（Fabric.js 版本）
          */
         drawShape(params) {
-            // 颜色转换：中文名 → 十六进制，默认为'none'（无填充）
+            if (!VCTools || !VCTools.canvas) {
+                console.warn('[Cmd] Fabric.js 未初始化');
+                return false;
+            }
+
+            // 颜色转换
             let color = params.color || '无';
-            if (VC.Config.COLOR_MAP[color]) {
-                color = VC.Config.COLOR_MAP[color];
-            }
+            if (VC.Config.COLOR_MAP[color]) color = VC.Config.COLOR_MAP[color];
+            if (color === '无' || color === 'none') color = 'transparent';
 
-            // 边框颜色转换：中文名 → 十六进制，默认为'none'（无边框）
             let strokeColor = params.stroke_color || params.strokeColor || '无';
-            if (VC.Config.COLOR_MAP[strokeColor]) {
-                strokeColor = VC.Config.COLOR_MAP[strokeColor];
+            if (VC.Config.COLOR_MAP[strokeColor]) strokeColor = VC.Config.COLOR_MAP[strokeColor];
+            if (strokeColor === '无' || strokeColor === 'none') strokeColor = 'transparent';
+
+            // 尺寸转换
+            const sizeMap = { small: 40, medium: 80, large: 140 };
+            const size = typeof params.size === 'number' ? params.size : (sizeMap[params.size] || 80);
+
+            // 坐标转换
+            const canvasW = VCTools.canvas.width;
+            const canvasH = VCTools.canvas.height;
+
+            // 位置名称 → 坐标比例
+            const posMap = {
+                'left_top': [0.15, 0.15], 'top': [0.5, 0.15], 'right_top': [0.85, 0.15],
+                'left': [0.15, 0.5], 'center': [0.5, 0.5], 'right': [0.85, 0.5],
+                'left_bottom': [0.15, 0.85], 'bottom': [0.5, 0.85], 'right_bottom': [0.85, 0.85]
+            };
+
+            let left, top;
+            if (params.x !== undefined && params.y !== undefined) {
+                // 有坐标：可能是 0-1 或像素
+                left = params.x;
+                top = params.y;
+                if (left <= 1 && top <= 1) {
+                    left = left * canvasW;
+                    top = top * canvasH;
+                }
+            } else if (params.position && posMap[params.position]) {
+                // 有位置名称
+                const [rx, ry] = posMap[params.position];
+                left = rx * canvasW;
+                top = ry * canvasH;
+            } else {
+                // 默认居中
+                left = canvasW / 2;
+                top = canvasH / 2;
             }
 
-            // 坐标处理：有 x,y 时使用坐标，否则回退到 position 名称
-            const hasCoords = params.x !== undefined && params.y !== undefined;
-
-            const obj = VC.State.addObject({
-                shape: params.shape_type || params.shape || 'circle',
-                color: color,
-                size: params.size || 'medium',
-                x: hasCoords ? params.x : undefined,
-                y: hasCoords ? params.y : undefined,
-                position: params.position || 'center',
-                opacity: params.opacity !== undefined ? params.opacity : 1,
-                strokeColor: strokeColor,
+            const shapeType = params.shape_type || params.shape || 'circle';
+            const obj = VCTools.createShape(shapeType, {
+                left: left,
+                top: top,
+                size: size,
+                fill: color,
+                stroke: strokeColor,
                 strokeWidth: params.stroke_width || params.strokeWidth || 2,
+                opacity: params.opacity !== undefined ? params.opacity : 1,
+                angle: params.rotation || 0,
                 tag: params.tag || null,
-                rotation: params.rotation || 0
             });
 
-            // 同步到画布对象数组（确保 redrawAll 能读到）
-            if (VC.CanvasInteraction && VC.CanvasInteraction.objects) {
-                const ciObjs = VC.CanvasInteraction.objects;
-                if (!ciObjs.find(o => o.id === obj.id)) {
-                    ciObjs.push(obj);
-                }
-            }
-
-            if (VC.Log) {
-                const shapeName = SHAPE_NAMES[obj.shape] || obj.shape;
-                VC.Log.add('cmd', `绘制: ${obj.color}${shapeName}`);
+            if (obj && VC.Log) {
+                const shapeName = SHAPE_NAMES[shapeType] || shapeType;
+                VC.Log.add('cmd', `绘制: ${color}${shapeName}`);
             }
 
             return obj;
@@ -174,7 +202,7 @@
         // ─── 编辑 ─────────────────────────────────────
 
         /**
-         * 编辑图形属性
+         * 编辑图形属性（Fabric.js 版本）
          */
         editShape(params) {
             const obj = this._resolveTarget(params.target_tag || params.targetId);
@@ -184,36 +212,31 @@
             }
 
             const updates = {};
-            // 颜色转换：中文名 → 十六进制
             let newColor = params.new_color || params.newColor;
             if (newColor !== undefined) {
-                updates.color = VC.Config.COLOR_MAP[newColor] || newColor;
+                updates.fill = VC.Config.COLOR_MAP[newColor] || newColor;
             }
-            if (params.new_size) updates.size = params.new_size;
-            if (params.newSize) updates.size = params.newSize;
-            if (params.new_position) updates.position = params.new_position;
-            if (params.newPosition) updates.position = params.newPosition;
+            if (params.new_size) {
+                const sizeMap = { small: 40, medium: 80, large: 140 };
+                const s = typeof params.new_size === 'number' ? params.new_size : (sizeMap[params.new_size] || 80);
+                const scale = s / (obj.width || 80);
+                updates.scaleX = scale;
+                updates.scaleY = scale;
+            }
             if (params.new_opacity !== undefined) updates.opacity = params.new_opacity;
             if (params.newOpacity !== undefined) updates.opacity = params.newOpacity;
             let strokeColor = params.new_stroke_color || params.newStrokeColor;
             if (strokeColor !== undefined) {
-                updates.strokeColor = VC.Config.COLOR_MAP[strokeColor] || strokeColor;
+                updates.stroke = VC.Config.COLOR_MAP[strokeColor] || strokeColor;
             }
             if (params.new_stroke_width !== undefined) updates.strokeWidth = params.new_stroke_width;
             if (params.newStrokeWidth !== undefined) updates.strokeWidth = params.newStrokeWidth;
-            if (params.new_tag) {
-                updates.tag = params.new_tag;
-            }
+            if (params.new_tag) updates.tag = params.new_tag;
 
-            const success = VC.State.updateObject(obj.id, updates);
-
-            // 同步重绘画布
-            if (success && VC.CanvasInteraction) {
-                VC.CanvasInteraction.redrawAll();
-            }
+            const success = VCTools.updateObject(obj, updates);
 
             if (success && VC.Log) {
-                VC.Log.add('cmd', `已修改: ${obj.tag || obj.shape}`);
+                VC.Log.add('cmd', `已修改: ${obj.tag || obj.type}`);
             }
 
             return success;
@@ -226,22 +249,31 @@
             const obj = this._resolveTarget(params.target_tag || params.targetId);
             if (!obj) return false;
 
-            const updates = {};
             const hasCoords = params.x !== undefined && params.y !== undefined;
             if (hasCoords) {
-                updates.x = params.x;
-                updates.y = params.y;
+                const canvasW = VCTools.canvas.width;
+                const canvasH = VCTools.canvas.height;
+                VCTools.updateObject(obj, {
+                    left: params.x * canvasW,
+                    top: params.y * canvasH,
+                });
             } else {
-                updates.position = params.position || 'center';
+                // 位置名称 → 坐标
+                const posMap = {
+                    center: [0.5, 0.5], left_top: [0.25, 0.25], top: [0.5, 0.25], right_top: [0.75, 0.25],
+                    left: [0.25, 0.5], right: [0.75, 0.5],
+                    left_bottom: [0.25, 0.75], bottom: [0.5, 0.75], right_bottom: [0.75, 0.75]
+                };
+                const pos = posMap[params.position || 'center'] || posMap.center;
+                VCTools.updateObject(obj, {
+                    left: pos[0] * VCTools.canvas.width,
+                    top: pos[1] * VCTools.canvas.height,
+                });
             }
 
-            const success = VC.State.updateObject(obj.id, updates);
+            const success = true;
 
-            if (success && VC.CanvasInteraction) {
-                VC.CanvasInteraction.redrawAll();
-            }
-
-            if (success && VC.Log) {
+            if (VC.Log) {
                 const label = hasCoords ? `(${params.x},${params.y})` : (POS_NAMES[params.position] || params.position);
                 VC.Log.add('cmd', `移动: ${obj.tag || obj.shape} → ${label}`);
             }
@@ -330,16 +362,8 @@
                 return false;
             }
 
-            const name = obj.tag || obj.shape;
-            const success = VC.State.deleteObject(obj.id);
-
-            // 同步从画布对象数组移除
-            if (success && VC.CanvasInteraction) {
-                const ciObjs = VC.CanvasInteraction.objects;
-                const idx = ciObjs.findIndex(o => o.id === obj.id);
-                if (idx >= 0) ciObjs.splice(idx, 1);
-                VC.CanvasInteraction.redrawAll();
-            }
+            const name = obj.tag || obj.type;
+            const success = VCTools.removeObject(obj);
 
             if (success && VC.Log) {
                 VC.Log.add('cmd', `已删除: ${name}`);
@@ -579,12 +603,8 @@
          * 清空画布
          */
         clearAll() {
+            VCTools.clearAll();
             VC.State.clearAll();
-            // 同步清空画布对象数组
-            if (VC.CanvasInteraction) {
-                VC.CanvasInteraction.objects.length = 0;
-                VC.CanvasInteraction.redrawAll();
-            }
 
             if (VC.Log) {
                 VC.Log.add('cmd', '已清空画布');
@@ -654,8 +674,8 @@
 
             // 如果指定了坐标，检测是否有形状在该位置
             if (params.x !== undefined && params.y !== undefined) {
-                const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800;
-                const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600;
+                const canvasW = VCTools ? VCTools.canvas.width : 800;
+                const canvasH = VCTools ? VCTools.canvas.height : 600;
                 const px = params.x * canvasW;
                 const py = params.y * canvasH;
 
@@ -740,36 +760,51 @@
                 return false;
             }
 
+            if (!VCTools || !VCTools.canvas) {
+                console.warn('[Cmd] Fabric.js 未初始化');
+                return false;
+            }
+
             const scale = params.scale || 1;
             const size = 80 * scale;
-            const pathData = VC.Vector.generate(shapeType, size);
-            if (!pathData) return false;
+            const svgPath = VC.Vector.generate(shapeType, size);
+            if (!svgPath) return false;
 
             // 颜色转换
-            let fillColor = params.fill_color || params.fill || 'none';
+            let fillColor = params.fill_color || params.fill || '#333333';
             if (VC.Config.COLOR_MAP[fillColor]) fillColor = VC.Config.COLOR_MAP[fillColor];
+            if (fillColor === '无' || fillColor === 'none') fillColor = 'transparent';
             let strokeColor = params.stroke_color || params.stroke || '#333333';
             if (VC.Config.COLOR_MAP[strokeColor]) strokeColor = VC.Config.COLOR_MAP[strokeColor];
+            if (strokeColor === '无' || strokeColor === 'none') strokeColor = 'transparent';
 
-            const obj = {
-                id: 'vec_' + Date.now() + '_' + Math.random(),
-                type: 'vector',
-                shape: shapeType,
-                pathData: pathData,
-                size: size,
+            // 坐标：0-1 → 像素
+            const canvasW = VCTools.canvas.width;
+            const canvasH = VCTools.canvas.height;
+            const x = params.x !== undefined ? params.x : 0.5;
+            const y = params.y !== undefined ? params.y : 0.5;
+            const left = x <= 1 ? x * canvasW : x;
+            const top = y <= 1 ? y * canvasH : y;
+
+            // 创建 Fabric Path 对象（直接用 SVG 字符串）
+            const fabricPath = new fabric.Path(svgPath, {
+                left: left,
+                top: top,
                 fill: fillColor,
                 stroke: strokeColor,
                 strokeWidth: params.stroke_width || 2,
-                opacity: params.opacity !== undefined ? params.opacity : 1,
-                x: params.x !== undefined ? params.x : 0.5,
-                y: params.y !== undefined ? params.y : 0.5,
-                rotation: params.rotation || 0,
-                scale: scale
-            };
+                originX: 'center',
+                originY: 'center',
+                scaleX: scale,
+                scaleY: scale,
+                angle: params.rotation || 0,
+            });
 
-            // 存入画布对象数组
-            const objects = VC.CanvasInteraction.objects;
-            objects.push(obj);
+            fabricPath.id = 'vec_' + Date.now() + '_' + Math.random();
+            VCTools.canvas.add(fabricPath);
+            VCTools.canvas.setActiveObject(fabricPath);
+            VCTools.canvas.renderAll();
+            VCTools.saveState();
 
             // 同步到 VC.State
             if (VC.State) {
@@ -851,8 +886,8 @@
             }
 
             const paths = result.paths;
-            const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800;
-            const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600;
+            const canvasW = VCTools ? VCTools.canvas.width : 800;
+            const canvasH = VCTools ? VCTools.canvas.height : 600;
 
             // 解析 SVG 路径中的所有坐标点，计算精确包围盒
             let minX = Infinity, minY = Infinity, maxX = -Infinity, maxY = -Infinity;
@@ -945,6 +980,177 @@
             return count > 0;
         },
 
+        // ─── Fabric.js ─────────────────────────────────
+
+        /**
+         * 注入 Fabric.js JSON 到画布
+         */
+        injectFabricJson(action) {
+            if (!VCTools || !VCTools.canvas) {
+                console.warn('[Cmd] Fabric.js 未初始化');
+                return false;
+            }
+
+            // 提取数据：优先从 action.result.data，其次从 params
+            let data = null;
+            if (action.result && action.result.data) {
+                data = action.result.data;
+            } else if (action.params) {
+                data = action.params.json_data || action.params.json;
+            }
+
+            if (!data) {
+                console.warn('[Cmd] inject_fabric_json: 无数据', action);
+                return false;
+            }
+
+            try {
+                const jsonData = typeof data === 'string' ? JSON.parse(data) : data;
+
+                // 获取对象数组
+                let objects = jsonData.objects || [jsonData];
+
+                // 追加到画布（不清空）
+                let addedCount = 0;
+                objects.forEach(objData => {
+                    const type = objData.type;
+                    if (!type) return;
+
+                    const opts = { ...objData };
+                    delete opts.type;
+
+                    // 创建 Fabric 对象
+                    let obj = null;
+                    // 提取 originX/originY，创建后单独设置
+                    const originX = opts.originX || 'center';
+                    const originY = opts.originY || 'center';
+                    delete opts.originX;
+                    delete opts.originY;
+
+                    switch (type) {
+                        case 'rect':
+                            obj = new fabric.Rect(opts);
+                            break;
+                        case 'circle':
+                            obj = new fabric.Circle(opts);
+                            break;
+                        case 'ellipse':
+                            obj = new fabric.Ellipse(opts);
+                            break;
+                        case 'triangle':
+                            obj = new fabric.Triangle(opts);
+                            break;
+                        case 'text':
+                        case 'i-text':
+                            obj = new fabric.IText(opts.text || '文字', opts);
+                            break;
+                        case 'line':
+                            obj = new fabric.Line([opts.x1 || 0, opts.y1 || 0, opts.x2 || 100, opts.y2 || 0], opts);
+                            break;
+                        case 'path':
+                            if (opts.path) {
+                                obj = new fabric.Path(opts.path, opts);
+                            }
+                            break;
+                        case 'polygon':
+                            if (opts.points) {
+                                obj = new fabric.Polygon(opts.points, opts);
+                            }
+                            break;
+                        default:
+                            console.warn('[Cmd] 未知 Fabric 类型:', type);
+                    }
+
+                    if (obj) {
+                        // 设置原点（创建后设置才有效）
+                        obj.set({
+                            originX: originX,
+                            originY: originY,
+                        });
+                        obj.id = 'fab_' + Date.now() + '_' + Math.random();
+                        VCTools.canvas.add(obj);
+                        addedCount++;
+                    }
+                });
+
+                if (addedCount > 0) {
+                    VCTools.canvas.renderAll();
+                    VCTools.saveState();
+                }
+
+                console.log('[Cmd] inject_fabric_json 追加:', addedCount, '个对象');
+
+                if (VC.Log) {
+                    VC.Log.add('cmd', `Fabric: ${addedCount}个对象`);
+                }
+                return addedCount > 0;
+
+            } catch (e) {
+                console.error('[Cmd] inject_fabric_json 解析失败:', e);
+                return false;
+            }
+        },
+
+        /**
+         * 创建单个 Fabric.js 对象
+         */
+        createFabricObject(action) {
+            if (!VCTools || !VCTools.canvas) {
+                console.warn('[Cmd] Fabric.js 未初始化');
+                return false;
+            }
+
+            // 提取数据：优先从 action.result.data，其次从 params
+            let data = null;
+            if (action.result && action.result.data) {
+                data = action.result.data;
+            } else if (action.params) {
+                data = action.params;
+            }
+
+            if (!data) {
+                console.warn('[Cmd] create_fabric_object: 无数据');
+                return false;
+            }
+
+            try {
+                // 如果是完整的 Fabric.js JSON（有 objects 数组），提取第一个对象
+                let objData = data;
+                if (data.objects && Array.isArray(data.objects)) {
+                    objData = data.objects[0];
+                }
+
+                if (!objData || !objData.type) {
+                    console.warn('[Cmd] create_fabric_object: 无效数据', objData);
+                    return false;
+                }
+
+                const type = objData.type;
+                const opts = { ...objData };
+                delete opts.type;
+
+                // 颜色转换
+                if (opts.fill && VC.Config && VC.Config.COLOR_MAP[opts.fill]) {
+                    opts.fill = VC.Config.COLOR_MAP[opts.fill];
+                }
+                if (opts.stroke && VC.Config && VC.Config.COLOR_MAP[opts.stroke]) {
+                    opts.stroke = VC.Config.COLOR_MAP[opts.stroke];
+                }
+
+                // 创建对象
+                const obj = VCTools.createShape(type, opts);
+
+                if (obj && VC.Log) {
+                    VC.Log.add('cmd', `Fabric: ${type}`);
+                }
+                return !!obj;
+
+            } catch (e) {
+                console.error('[Cmd] create_fabric_object 失败:', e);
+                return false;
+            }
+        },
+
         // ─── 操控工具 ─────────────────────────────────
 
         /**
@@ -981,7 +1187,7 @@
         },
 
         /**
-         * 自由路径绘制（带动画）
+         * 自由路径绘制（Fabric.js 版本）
          */
         async drawFreehandPath(params) {
             let points = params.points;
@@ -989,36 +1195,38 @@
                 try { points = JSON.parse(points); } catch (e) { return false; }
             }
             if (!Array.isArray(points) || points.length < 2) return false;
+            if (!VCTools || !VCTools.canvas) return false;
 
-            // 设置画笔参数
-            if (params.color) this.setBrushParams({ color: params.color });
-            if (params.size) this.setBrushParams({ size: params.size });
+            const canvasW = VCTools.canvas.width;
+            const canvasH = VCTools.canvas.height;
 
-            const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800;
-            const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600;
-            const drawCanvas = document.getElementById('drawCanvas');
-            const drawCtx = drawCanvas ? drawCanvas.getContext('2d') : null;
-            if (!drawCtx) return false;
-
-            // 动画绘制
+            // 将点转换为 Fabric.js Path 字符串
+            let pathStr = `M ${(points[0].x || 0) * canvasW} ${(points[0].y || 0) * canvasH}`;
             for (let i = 1; i < points.length; i++) {
-                const x0 = (points[i - 1].x || 0) * canvasW;
-                const y0 = (points[i - 1].y || 0) * canvasH;
-                const x1 = (points[i].x || 0) * canvasW;
-                const y1 = (points[i].y || 0) * canvasH;
-
-                drawCtx.beginPath();
-                drawCtx.moveTo(x0, y0);
-                drawCtx.lineTo(x1, y1);
-                drawCtx.strokeStyle = params.color || VC.State.brush?.color || '#333';
-                drawCtx.lineWidth = params.size || VC.State.brush?.size || 3;
-                drawCtx.lineCap = 'round';
-                drawCtx.stroke();
-
-                await new Promise(r => setTimeout(r, 30));
+                const x = (points[i].x || 0) * canvasW;
+                const y = (points[i].y || 0) * canvasH;
+                pathStr += ` L ${x} ${y}`;
             }
 
-            if (VC.Log) VC.Log.add('cmd', `自由绘制: ${points.length}点`);
+            // 创建 Fabric.js Path 对象
+            const color = params.color || '#333333';
+            const width = params.size || 3;
+            const path = new fabric.Path(pathStr, {
+                fill: 'transparent',
+                stroke: color,
+                strokeWidth: width,
+                strokeLineCap: 'round',
+                strokeLineJoin: 'round',
+                selectable: true,
+            });
+
+            VCTools.canvas.add(path);
+            VCTools.canvas.renderAll();
+            VCTools.saveState();
+
+            if (VC.Log) {
+                VC.Log.add('cmd', `自由路径: ${points.length}个点`);
+            }
             return true;
         },
 
@@ -1141,10 +1349,13 @@
         _resolveTarget(ref) {
             if (!ref) {
                 // 默认选中当前选中的对象
-                return VC.State.getSelected();
+                if (VCTools && VCTools.canvas) {
+                    return VCTools.canvas.getActiveObject();
+                }
+                return null;
             }
 
-            const objs = VC.State.objects || [];
+            const objs = VCTools ? VCTools.getObjects() : [];
 
             // 按 tag 查找
             let obj = objs.find(o => o.tag === ref);
@@ -1187,6 +1398,12 @@
          * 优先快通道，其余全部走 LLM 理解
          */
         async processText(text) {
+            // 如果 companion 模式激活，跳过（companion 自己处理）
+            if (window.agentRunning) {
+                console.log('[Cmd] companion 模式激活，跳过 processText');
+                return;
+            }
+
             // 聊天面板记录用户消息
             if (typeof addChatMessage === 'function') addChatMessage('user', text);
 
@@ -1245,14 +1462,31 @@
          * 构建增强画布上下文：工具状态 + 画笔参数 + 对象列表(含ID)
          */
         _buildCanvasContext() {
-            const objs = VC.State.objects || [];
-            const canvasW = VC.Viewport ? VC.Viewport.getCanvasWidth() : 800;
-            const canvasH = VC.Viewport ? VC.Viewport.getCanvasHeight() : 600;
+            // 优先从 Fabric.js canvas 读取对象（更准确）
+            let objs = [];
+            if (VCTools && VCTools.canvas) {
+                const fabricObjects = VCTools.canvas.getObjects();
+                objs = fabricObjects.map((o, i) => ({
+                    id: o.id || `fab_${i}`,
+                    shape: o.type || 'unknown',
+                    color: o.fill || '#333',
+                    size: o.radius ? `${Math.round(o.radius)}px` : (o.width ? `${Math.round(o.width)}x${Math.round(o.height)}px` : 'medium'),
+                    x: o.left / VCTools.canvas.width,
+                    y: o.top / VCTools.canvas.height,
+                    rotation: o.angle || 0,
+                    tag: o.id || '',
+                }));
+            } else {
+                objs = VC.State.objects || [];
+            }
+
+            const canvasW = VCTools ? VCTools.canvas.width : 800;
+            const canvasH = VCTools ? VCTools.canvas.height : 600;
 
             // 1. 工具状态
             const toolState = `当前工具:${VC.State.currentTool || 'select'}, 画笔颜色:${VC.State.brush?.color || '#333'}, 笔刷大小:${VC.State.brush?.size || 3}`;
 
-            // 2. 对象列表
+            // 2. 对象列表（包含位置信息，避免重叠）
             const objectsDesc = objs.length === 0 ? '画布为空' : objs.map((o, i) => {
                 let posDesc;
                 if (o.x !== undefined && o.y !== undefined) {

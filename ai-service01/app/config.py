@@ -17,13 +17,13 @@ class Settings(BaseSettings):
     DEEPSEEK_API_KEY: str = Field(..., description="DeepSeek API Key")
     DEEPSEEK_BASE_URL: str = "https://api.deepseek.com"
     LLM_MODEL: str = "deepseek-v4-flash"
-    LLM_TIMEOUT: float = 30.0
+    LLM_TIMEOUT: float = 60.0  # 增加到 60 秒，复杂图形需要更多时间
 
     # ── DashScope（ASR + 图片） ──
     DASHSCOPE_API_KEY: str = Field(..., description="DashScope API Key")
     ASR_MODEL: str = "qwen3-asr-flash-realtime"
     ASR_REALTIME_URL: str = "wss://dashscope.aliyuncs.com/api-ws/v1/realtime"
-    IMAGE_MODEL: str = "flux-schnell"
+    IMAGE_MODEL: str = "Z-Image-Turbo"  # 通义万相文生图模型
     IMAGE_SUBMIT_URL: str = "https://dashscope.aliyuncs.com/api/v1/services/aigc/text2image/image-synthesis"
     IMAGE_RESULT_URL: str = "https://dashscope.aliyuncs.com/api/v1/tasks"
 

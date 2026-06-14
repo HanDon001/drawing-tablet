@@ -23,8 +23,49 @@
     }
 
     function toggleVoiceInAIMode() {
-        const state = (typeof VC !== 'undefined' && VC.Companion) ? VC.Companion.getState() : 'unknown';
+        if (!VC.Companion) {
+            console.warn('[AI] Companion 模块未加载');
+            return;
+        }
+        const state = VC.Companion.getState ? VC.Companion.getState() : 'unknown';
         console.log('[AI] 当前状态:', state);
+
+        // 如果陪伴模式未启动，重新启动
+        if (state === 'unknown' || state === 'idle') {
+            VC.Companion.start({
+                onPartial: (text) => { showAITextBubble('🎤 ' + text); },
+                onFinal: (text) => {
+                    showAITextBubble(text);
+                    VC.Chat.addChat('user', text);
+                },
+                onActions: async (actions) => {
+                    if (VC.Cmd && VC.Cmd.executeActions) {
+                        await VC.Cmd.executeActions(actions);
+                    } else if (VC.Cmd) {
+                        for (const action of actions) { VC.Cmd.execute(action); }
+                    }
+                    VCTools.canvas.renderAll();
+                },
+                onReply: (text) => {
+                    showAITextBubble(text);
+                    VC.Chat.addChat('assistant', text);
+                },
+                onStateChange: (newState) => {
+                    switch (newState) {
+                        case 'idle': showAITextBubble('正在聆听...'); break;
+                        case 'listening': showAITextBubble('🎤 听到你在说话...'); break;
+                        case 'processing': showAITextBubble('🧠 思考中...'); break;
+                        case 'proactive': showAITextBubble('💭 让我想想...'); break;
+                    }
+                },
+            }).then(() => {
+                showAITextBubble('正在聆听...');
+                VC.Chat.addChat('assistant', 'AI 画伴已重新启动。');
+            }).catch(e => {
+                console.error('[AI] 启动失败:', e);
+                showAITextBubble('⚠️ 启动失败: ' + e.message);
+            });
+        }
     }
 
     /* ========== AI 陪伴模式 ========== */
@@ -48,45 +89,52 @@
 
         if (typeof VC !== 'undefined' && VC.Companion) {
             let greeted = false;
-            VC.Companion.start({
-                onPartial: (text) => { showAITextBubble('🎤 ' + text); },
-                onFinal: (text) => {
-                    showAITextBubble(text);
-                    VC.Chat.addChat('user', text);
-                },
-                onActions: async (actions) => {
-                    if (VC.Cmd && VC.Cmd.executeActions) {
-                        await VC.Cmd.executeActions(actions);
-                    } else if (VC.Cmd) {
-                        for (const action of actions) { VC.Cmd.execute(action); }
-                    }
-                    VC.CanvasInteraction.redrawAll();
-                },
-                onReply: (text) => {
-                    showAITextBubble(text);
-                    VC.Chat.addChat('assistant', text);
-                },
-                onStateChange: (newState, oldState) => {
-                    switch (newState) {
-                        case 'idle':
-                            showAITextBubble('正在聆听...');
-                            if (!greeted) {
-                                greeted = true;
-                                const greeting = '你好呀！我是小画，有什么可以帮你的吗？';
-                                showAITextBubble(greeting);
-                                VC.Chat.addChat('assistant', greeting);
-                                VC.Voice.speak(greeting);
-                            }
-                            break;
-                        case 'listening': showAITextBubble('🎤 听到你在说话...'); break;
-                        case 'processing': showAITextBubble('🧠 思考中...'); break;
-                        case 'proactive': showAITextBubble('💭 让我想想...'); break;
-                    }
-                },
-            }).catch(e => {
+            try {
+                await VC.Companion.start({
+                    onPartial: (text) => { showAITextBubble('🎤 ' + text); },
+                    onFinal: (text) => {
+                        showAITextBubble(text);
+                        VC.Chat.addChat('user', text);
+                    },
+                    onActions: async (actions) => {
+                        if (VC.Cmd && VC.Cmd.executeActions) {
+                            await VC.Cmd.executeActions(actions);
+                        } else if (VC.Cmd) {
+                            for (const action of actions) { VC.Cmd.execute(action); }
+                        }
+                        VCTools.canvas.renderAll();
+                    },
+                    onReply: (text) => {
+                        showAITextBubble(text);
+                        VC.Chat.addChat('assistant', text);
+                    },
+                    onStateChange: (newState, oldState) => {
+                        switch (newState) {
+                            case 'idle':
+                                showAITextBubble('正在聆听...');
+                                if (!greeted) {
+                                    greeted = true;
+                                    const greeting = '你好呀！我是小画，有什么可以帮你的吗？';
+                                    showAITextBubble(greeting);
+                                    VC.Chat.addChat('assistant', greeting);
+                                    VC.Voice.speak(greeting);
+                                }
+                                break;
+                            case 'listening': showAITextBubble('🎤 听到你在说话...'); break;
+                            case 'processing': showAITextBubble('🧠 思考中...'); break;
+                            case 'proactive': showAITextBubble('💭 让我想想...'); break;
+                        }
+                    },
+                });
+                showAITextBubble('正在聆听...');
+            } catch (e) {
                 console.error('[AI] 陪伴模式启动失败:', e);
                 showAITextBubble('⚠️ 启动失败: ' + e.message);
-            });
+                VC.Chat.addChat('assistant', 'AI 陪伴模式启动失败: ' + e.message);
+            }
+        } else {
+            showAITextBubble('⚠️ Companion 模块未加载');
+            VC.Chat.addChat('assistant', 'AI 陪伴模块未正确加载。');
         }
         window.agentRunning = true;
         VC.Chat.addChat('assistant', 'AI 陪伴模式已激活。我会持续聆听你的创作指令，随时为你服务。');
@@ -151,7 +199,7 @@
                     onActions: async (actions) => {
                         if (VC.Cmd && VC.Cmd.executeActions) await VC.Cmd.executeActions(actions);
                         else if (VC.Cmd) { for (const a of actions) VC.Cmd.execute(a); }
-                        VC.CanvasInteraction.redrawAll();
+                        VCTools.canvas.renderAll();
                     },
                     onReply: (text) => { showAITextBubble(text); VC.Chat.addChat('assistant', text); },
                     onStateChange: (newState) => {

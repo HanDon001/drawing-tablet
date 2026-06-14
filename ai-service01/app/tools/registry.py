@@ -2,6 +2,7 @@
 工具注册器 — 装饰器自动注册 + OpenAI Function Calling Schema 生成
 """
 
+import asyncio
 import inspect
 from typing import Callable, Dict, Any, List
 
@@ -25,12 +26,15 @@ class ToolRegistry:
         return decorator
 
     @classmethod
-    def execute(cls, name: str, args: dict) -> str:
+    async def execute(cls, name: str, args: dict) -> str:
         func = cls._tools.get(name)
         if not func:
             return f"未知工具: {name}"
         try:
             result = func(**args)
+            # 如果是异步函数，需要 await
+            if asyncio.iscoroutine(result):
+                result = await result
             return str(result) if result else "已执行"
         except Exception as e:
             return f"执行错误: {e}"

@@ -460,9 +460,54 @@
             color: #EF4444;
         }
 
+        .layer-action-btn.disabled {
+            opacity: 0.3;
+            cursor: default;
+            pointer-events: none;
+        }
+
         body.ai-mode .layer-action-btn,
         body.multi-mode .layer-action-btn {
             color: #7a7a9a;
+        }
+
+        /* 子图层样式 */
+        .layer-child {
+            padding-left: 24px;
+            opacity: 0.9;
+        }
+
+        .layer-child .layer-thumb {
+            width: 18px;
+            height: 18px;
+        }
+
+        /* 展开/折叠按钮 */
+        .layer-expand-btn {
+            width: 16px;
+            height: 16px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            color: #9B6A3A;
+            transition: all 0.2s;
+            flex-shrink: 0;
+        }
+
+        .layer-expand-btn:hover {
+            color: #7A4F28;
+            background: rgba(155, 106, 58, 0.1);
+            border-radius: 4px;
+        }
+
+        body.ai-mode .layer-expand-btn {
+            color: #7a7a9a;
+        }
+
+        body.ai-mode .layer-expand-btn:hover {
+            color: #5f27cd;
+            background: rgba(95, 39, 205, 0.1);
         }
 
         /* ========== 画布区域 ========== */
