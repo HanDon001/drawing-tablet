@@ -32,11 +32,13 @@
         const t = text.trim();
         let matched = false;
 
+        // 本地快速命令
         if (t.includes('撤销') || t.includes('undo')) {
             VC.Cmd.undo(); matched = true;
         } else if (t.includes('清空') || t.includes('清除')) {
             VC.Cmd.clearAll(); matched = true;
         } else {
+            // 尝试匹配本地形状命令
             let shape = null, color = null;
             for (const [k, v] of Object.entries(shapeMap)) {
                 if (t.includes(k)) { shape = v; break; }
@@ -45,19 +47,48 @@
                 if (t.includes(k)) { color = v; break; }
             }
             if (shape) {
-                const saved = VC.CanvasInteraction.currentFill;
-                if (color) VC.CanvasInteraction.currentFill = color;
-                VC.CanvasInteraction.addShape(shape, color);
-                if (color) VC.CanvasInteraction.currentFill = saved;
-                const cName = color ? Object.keys(colorMap).find(k => colorMap[k] === color) : '';
-                const sName = Object.keys(shapeMap).find(k => shapeMap[k] === shape);
-                VC.Chat.addChat('assistant', `已为你绘制${cName ? cName : ''}${sName}。`);
+                // 使用 VCTools 创建形状
+                if (VCTools && VCTools.createShape) {
+                    VCTools.createShape(shape, { fill: color || '#333333' });
+                    const cName = color ? Object.keys(colorMap).find(k => colorMap[k] === color) : '';
+                    const sName = Object.keys(shapeMap).find(k => shapeMap[k] === shape);
+                    VC.Chat.addChat('assistant', `已为你绘制${cName ? cName : ''}${sName}。`);
+                } else {
+                    VC.Chat.addChat('assistant', '画布工具未就绪，请稍候再试。');
+                }
                 matched = true;
             }
         }
 
+        // 本地命令不匹配，调用 LLM 处理
         if (!matched && t.length > 1) {
-            VC.Chat.addChat('assistant', `收到指令："${t}"，我正在理解中...`);
+            VC.Chat.addChat('user', text);
+            // 调用 LLM 接口
+            console.log('[LocalCommands] 尝试调用 VC.Cmd:', typeof VC.Cmd, 'processText:', typeof VC.Cmd?.processText);
+            if (typeof VC.Cmd !== 'undefined' && typeof VC.Cmd.processText === 'function') {
+                VC.Cmd.processText(text).catch(err => {
+                    console.error('[LocalCommands] processText 错误:', err);
+                    VC.Chat.addChat('assistant', '处理出错了，请重试。');
+                });
+            } else {
+                // 备用方案：直接调用 fetch
+                console.log('[LocalCommands] VC.Cmd 不可用，直接调用 fetch');
+                fetch('/ai/v1/interpret', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ text, canvas_context: '画布为空' })
+                })
+                .then(resp => resp.json())
+                .then(data => {
+                    if (data.reply) {
+                        VC.Chat.addChat('assistant', data.reply);
+                    }
+                })
+                .catch(err => {
+                    console.error('[LocalCommands] fetch 错误:', err);
+                    VC.Chat.addChat('assistant', 'AI 服务暂时不可用。');
+                });
+            }
         }
     }
 

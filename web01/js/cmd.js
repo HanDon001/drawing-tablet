@@ -67,9 +67,18 @@
                 case 'set_opacity':     return this.setOpacity(params);
                 case 'set_stroke':      return this.setStroke(params);
                 case 'rotate_shape':    return this.rotateShape(params);
+                case 'reorder_layer':   return this.reorderShape(params);
                 // 删除
                 case 'delete_shape':    return this.deleteShape(params);
+                case 'delete_by_tag':   return this.deleteByTag(params);
                 case 'delete_all':      return this.clearAll();
+                // 保存
+                case 'save_as_png':     return this.saveAsPNG(params);
+                case 'save_as_svg':     return this.saveAsSVG(params);
+                // 编组
+                case 'group_objects':   return this.groupSelected();
+                case 'group_by_tag':   return this.groupByTag(params);
+                case 'ungroup_objects': return this.ungroupSelected();
                 // 查询
                 case 'list_shapes':     return this.listShapes();
                 case 'get_shape_info':  return this.getShapeInfo(params);
@@ -505,41 +514,142 @@
             const obj = this._resolveTarget(params.target_tag || params.targetId);
             if (!obj) return false;
 
-            const objs = VC.State.objects;
-            const idx = objs.indexOf(obj);
-            if (idx === -1) return false;
-
-            VC.State.saveHistory();
+            // 使用 VCLayer API 操作图层
+            if (typeof VCLayer === 'undefined') return false;
 
             switch (params.direction) {
                 case 'front':
-                    objs.splice(idx, 1);
-                    objs.push(obj);
+                    VCLayer.bringToFront(obj);
                     break;
                 case 'back':
-                    objs.splice(idx, 1);
-                    objs.unshift(obj);
+                    VCLayer.sendToBack(obj);
                     break;
                 case 'forward':
-                    if (idx < objs.length - 1) {
-                        objs.splice(idx, 1);
-                        objs.splice(idx + 1, 0, obj);
-                    }
+                    VCLayer.bringForward(obj);
                     break;
                 case 'backward':
-                    if (idx > 0) {
-                        objs.splice(idx, 1);
-                        objs.splice(idx - 1, 0, obj);
-                    }
+                    VCLayer.sendBackward(obj);
                     break;
             }
-
-            VC.State.emit('objectsChange', { action: 'reorder' });
 
             if (VC.Log) {
                 VC.Log.add('cmd', `图层调整: ${obj.tag || obj.shape} → ${params.direction}`);
             }
 
+            return true;
+        },
+
+        /**
+         * 按标签批量删除图形
+         */
+        deleteByTag(params) {
+            const tag = params.target_tag;
+            if (!tag) return false;
+
+            const objs = VCTools ? VCTools.getObjects() : [];
+            const toDelete = objs.filter(o => {
+                // 匹配标签（支持部分匹配）
+                const objTag = (o.tag || '').toLowerCase();
+                const searchTag = tag.toLowerCase();
+                return objTag.includes(searchTag) || searchTag.includes(objTag);
+            });
+
+            if (toDelete.length === 0) {
+                if (VC.Log) VC.Log.add('cmd', `未找到: ${tag}`);
+                return false;
+            }
+
+            VC.State.saveHistory();
+
+            toDelete.forEach(obj => {
+                if (VCTools && VCTools.canvas) {
+                    VCTools.canvas.remove(obj);
+                }
+            });
+
+            if (VCTools && VCTools.canvas) {
+                VCTools.canvas.renderAll();
+            }
+
+            if (VC.Log) {
+                VC.Log.add('cmd', `删除: ${tag} (${toDelete.length}个)`);
+            }
+
+            return true;
+        },
+
+        /**
+         * 保存为 PNG
+         */
+        saveAsPNG(params) {
+            if (!VCTools || !VCTools.canvas) return false;
+            VCTools.saveAsPNG();
+            if (VC.Log) VC.Log.add('cmd', '已保存为 PNG');
+            return true;
+        },
+
+        /**
+         * 保存为 SVG
+         */
+        saveAsSVG(params) {
+            if (!VCTools || !VCTools.canvas) return false;
+            VCTools.saveAsSVG();
+            if (VC.Log) VC.Log.add('cmd', '已保存为 SVG');
+            return true;
+        },
+
+        /**
+         * 编组
+         */
+        groupSelected() {
+            if (!VCTools) return false;
+            VCTools.groupSelected();
+            return true;
+        },
+
+        /**
+         * 解组
+         */
+        ungroupSelected() {
+            if (!VCTools) return false;
+            VCTools.ungroupSelected();
+            return true;
+        },
+
+        /**
+         * 按标签编组
+         */
+        groupByTag(params) {
+            const tag = params.target_tag;
+            if (!tag || !VCTools || !VCTools.canvas) return false;
+
+            const objs = VCTools.canvas.getObjects();
+            const toGroup = objs.filter(o => {
+                const objTag = (o.tag || '').toLowerCase();
+                const searchTag = tag.toLowerCase();
+                return objTag.includes(searchTag) || searchTag.includes(objTag);
+            });
+
+            if (toGroup.length < 2) {
+                if (VC.Log) VC.Log.add('cmd', `需要至少2个图形才能编组`);
+                return false;
+            }
+
+            // 选中所有匹配的图形
+            const sel = new fabric.ActiveSelection(toGroup, { canvas: VCTools.canvas });
+            VCTools.canvas.setActiveObject(sel);
+
+            // 编组
+            VCTools.groupSelected();
+
+            // 设置编组的标签
+            const group = VCTools.canvas.getActiveObject();
+            if (group) {
+                group.tag = tag;
+                group.id = 'group_' + Date.now();
+            }
+
+            if (VC.Log) VC.Log.add('cmd', `编组: ${tag} (${toGroup.length}个)`);
             return true;
         },
 
@@ -711,13 +821,78 @@
          * AI 生成图片
          */
         async aiGenerateImage(params) {
-            if (typeof VC.AIDraw === 'undefined') return false;
-
             const prompt = params.prompt || params.description || '';
             const style = params.style || 'realistic';
 
-            VC.AIDraw.activate();
-            return await VC.AIDraw.generate(prompt, style);
+            console.log('[Cmd] aiGenerateImage 被调用:', params);
+
+            // 直接调用后端图片生成接口
+            try {
+                const resp = await fetch(VC.Config.API_BASE + '/image/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ prompt, style, size: '1024*1024' })
+                });
+
+                if (!resp.ok) {
+                    throw new Error(`HTTP ${resp.status}`);
+                }
+
+                const data = await resp.json();
+                console.log('[Cmd] 图片生成响应:', data);
+
+                if (data.status === 'success' && data.image_url) {
+                    // 加载图片并添加到画布
+                    this._addImageToCanvas(data.image_url, prompt);
+                    return true;
+                } else {
+                    console.error('[Cmd] 图片生成失败:', data);
+                    return false;
+                }
+            } catch (e) {
+                console.error('[Cmd] 图片生成异常:', e);
+                return false;
+            }
+        },
+
+        /**
+         * 添加图片到画布
+         */
+        _addImageToCanvas(imageUrl, prompt) {
+            if (!VCTools || !VCTools.canvas) {
+                console.error('[Cmd] VCTools.canvas 未初始化');
+                return;
+            }
+
+            const img = new Image();
+            img.crossOrigin = 'anonymous';
+            img.onload = () => {
+                console.log('[Cmd] 图片加载成功:', img.width, 'x', img.height);
+                const canvasW = VCTools.canvas.width;
+                const canvasH = VCTools.canvas.height;
+                const maxSize = Math.min(canvasW, canvasH) * 0.8;
+                const ratio = img.width / img.height;
+                const w = ratio > 1 ? maxSize : maxSize * ratio;
+                const h = ratio > 1 ? maxSize / ratio : maxSize;
+
+                const fabricImg = new fabric.Image(img, {
+                    left: canvasW / 2,
+                    top: canvasH / 2,
+                    originX: 'center',
+                    originY: 'center',
+                    scaleX: w / img.width,
+                    scaleY: h / img.height,
+                });
+                fabricImg.id = 'ai_img_' + Date.now();
+                fabricImg.tag = 'AI: ' + (prompt || '').substring(0, 10);
+                VCTools.canvas.add(fabricImg);
+                VCTools.canvas.renderAll();
+                console.log('[Cmd] 图片已添加到画布');
+            };
+            img.onerror = (e) => {
+                console.error('[Cmd] 图片加载失败:', imageUrl, e);
+            };
+            img.src = imageUrl;
         },
 
         /**
@@ -986,6 +1161,8 @@
          * 注入 Fabric.js JSON 到画布
          */
         injectFabricJson(action) {
+            console.log('[Cmd] injectFabricJson 被调用:', action);
+
             if (!VCTools || !VCTools.canvas) {
                 console.warn('[Cmd] Fabric.js 未初始化');
                 return false;
@@ -995,14 +1172,18 @@
             let data = null;
             if (action.result && action.result.data) {
                 data = action.result.data;
+                console.log('[Cmd] 从 action.result.data 提取数据');
             } else if (action.params) {
                 data = action.params.json_data || action.params.json;
+                console.log('[Cmd] 从 action.params 提取数据');
             }
 
             if (!data) {
                 console.warn('[Cmd] inject_fabric_json: 无数据', action);
                 return false;
             }
+
+            console.log('[Cmd] 提取的数据:', typeof data, data);
 
             try {
                 const jsonData = typeof data === 'string' ? JSON.parse(data) : data;
@@ -1356,34 +1537,45 @@
             }
 
             const objs = VCTools ? VCTools.getObjects() : [];
+            if (objs.length === 0) return null;
 
-            // 按 tag 查找
+            // 按 tag 精确查找
             let obj = objs.find(o => o.tag === ref);
+            if (obj) return obj;
+
+            // 按 tag 模糊查找（包含关系，如"树"匹配"树干"、"树冠"）
+            obj = objs.find(o => o.tag && (o.tag.includes(ref) || ref.includes(o.tag)));
             if (obj) return obj;
 
             // 按 id 查找
             obj = objs.find(o => o.id === ref);
             if (obj) return obj;
 
-            // 指代词处理
-            if (['它', '这个', '那个', '刚才', '最后'].some(w => ref.includes(w))) {
-                return VC.State.getSelected();
+            // 指代词处理：返回最后创建的对象
+            if (['它', '这个', '那个', '刚才', '最后', '刚才画的'].some(w => ref.includes(w))) {
+                return objs[objs.length - 1];
             }
 
-            // 按形状名查找（如"圆"、"方块"）
-            const shapeMap = {
-                '圆': 'circle', '方块': 'rectangle', '矩形': 'rectangle',
-                '三角': 'triangle', '直线': 'line', '星': 'star',
-                '菱': 'diamond', '箭头': 'arrow', '六边': 'hexagon'
-            };
-            for (const [cn, en] of Object.entries(shapeMap)) {
+            // 按颜色查找（如"红色的圆"）
+            const colorMap = { '红': '#EF4444', '蓝': '#3B82F6', '绿': '#10B981', '黄': '#F59E0B', '紫': '#8B5CF6', '橙': '#F97316', '粉': '#EC4899', '黑': '#1F2937', '白': '#FFFFFF' };
+            for (const [cn, hex] of Object.entries(colorMap)) {
                 if (ref.includes(cn)) {
-                    const found = objs.find(o => o.shape === en);
+                    const found = objs.find(o => o.fill === hex || o.color === hex);
                     if (found) return found;
                 }
             }
 
-            return null;
+            // 按形状查找（如"圆形"、"矩形"）
+            const shapeMap = { '圆': 'circle', '方': 'rectangle', '矩': 'rectangle', '三角': 'triangle', '星': 'star', '线': 'line', '菱': 'diamond', '箭头': 'arrow', '六边': 'hexagon' };
+            for (const [cn, en] of Object.entries(shapeMap)) {
+                if (ref.includes(cn)) {
+                    const found = objs.find(o => o.type === en || o.shape === en);
+                    if (found) return found;
+                }
+            }
+
+            // 兜底：返回最后创建的对象
+            return objs[objs.length - 1];
         },
 
         /**
@@ -1474,7 +1666,7 @@
                     x: o.left / VCTools.canvas.width,
                     y: o.top / VCTools.canvas.height,
                     rotation: o.angle || 0,
-                    tag: o.id || '',
+                    tag: o.tag || o.id || '',
                 }));
             } else {
                 objs = VC.State.objects || [];

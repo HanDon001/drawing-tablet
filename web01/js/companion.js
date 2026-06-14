@@ -66,10 +66,31 @@
 
     function handleAudio(float32Array) {
         if (!ws || ws.readyState !== WebSocket.OPEN) return
-        if (state === STATE.SPEAKING) return // 播报时不发音频，防回声
-        if (destroyed) return  // 修复3.1: 已销毁，不再处理
+        if (destroyed) return  // 已销毁，不再处理
 
-        // 修复3.3: 收到音频时清除 proactiveTimer，防止 proactive 与用户语音同时到达
+        // PROCESSING状态时忽略音频，等LLM处理完再接收新指令
+        if (state === STATE.PROCESSING) return
+
+        // 打断机制：SPEAKING状态时，检测到用户开口就停止TTS
+        if (state === STATE.SPEAKING) {
+            // 计算音频能量，检测用户是否开口
+            let energy = 0
+            for (let i = 0; i < float32Array.length; i++) {
+                energy += float32Array[i] * float32Array[i]
+            }
+            energy = Math.sqrt(energy / float32Array.length)
+            // 能量超过阈值，说明用户在说话，打断TTS
+            if (energy > 0.01) {
+                console.log('[Companion] 检测到用户开口，打断TTS')
+                stopCurrentAudio()
+                setState(STATE.LISTENING)
+                startListeningTimeout()
+            } else {
+                return  // 静音状态，不发送音频
+            }
+        }
+
+        // 收到音频时清除 proactiveTimer
         clearProactiveTimer()
 
         // 降采样到 16kHz
@@ -111,8 +132,18 @@
             case 'partial':
                 // 修复1: 收到用户语音时清除主动搭话定时器
                 clearProactiveTimer()
-                // 修复3: SPEAKING 和 PROCESSING 时忽略过期的 partial
-                if (state === STATE.SPEAKING || state === STATE.PROCESSING) {
+
+                // 打断机制：SPEAKING状态时收到用户语音，立即停止TTS
+                if (state === STATE.SPEAKING) {
+                    console.log('[Companion] 检测到用户语音，打断TTS播报')
+                    stopCurrentAudio()  // 立即停止TTS
+                    clearListeningTimeout()
+                    setState(STATE.LISTENING)
+                    startListeningTimeout()
+                }
+
+                // PROCESSING 时忽略过期的 partial
+                if (state === STATE.PROCESSING) {
                     console.log(`[Companion] 忽略过期 partial (当前状态: ${state})`)
                     break
                 }
@@ -130,8 +161,15 @@
                 clearListeningTimeout()
                 // 修复3.1: 已销毁，不再处理
                 if (destroyed) break
-                // 修复3: SPEAKING 时忽略过期的 final
+
+                // 打断机制：SPEAKING状态时收到final，立即停止TTS
                 if (state === STATE.SPEAKING) {
+                    console.log('[Companion] 检测到用户语音(final)，打断TTS播报')
+                    stopCurrentAudio()
+                }
+
+                // PROCESSING 时忽略过期的 final
+                if (state === STATE.PROCESSING) {
                     console.log(`[Companion] 忽略过期 final (当前状态: ${state})`)
                     break
                 }

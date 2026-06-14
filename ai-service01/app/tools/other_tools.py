@@ -24,11 +24,21 @@ def list_themes() -> str:
 
 @ToolRegistry.register(
     name="ai_generate_image",
-    description="用AI生成一张图片放到画布上。适合复杂图案如风景、动物。",
-    param_descriptions={"prompt": "图片描述", "style": "风格"},
+    description="用AI生成一张图片放到画布上。适合复杂图案如风景、动物、人物等。",
+    param_descriptions={
+        "prompt": "图片描述，如'一片星空'、'一只猫'",
+        "style": "风格：realistic(写实), cartoon(卡通), watercolor(水彩), sketch(素描)"
+    },
 )
-def ai_generate_image(prompt: str = "", style: str = "realistic") -> str:
-    return f"已提交AI生成: {prompt}"
+async def ai_generate_image(prompt: str = "", style: str = "realistic") -> str:
+    if not prompt:
+        return "错误：请提供图片描述"
+    try:
+        from ..services import image_service
+        image_url = await image_service.generate(prompt, style)
+        return f"图片已生成: {image_url}"
+    except Exception as e:
+        return f"图片生成失败: {str(e)}"
 
 
 @ToolRegistry.register(

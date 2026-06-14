@@ -83,28 +83,32 @@ async def gateway_ws(ws: WebSocket):
         asyncio.create_task(process_text(text, canvas_context=last_canvas_context))
 
     # 周期性commit任务：兜底机制，防止客户端 VAD 漏掉的情况
-    # 方案B：禁用服务端 VAD，主要依赖客户端 VAD 的 speech_end 触发 commit
-    committed_recently = False  # 标记最近是否已 commit
+    last_commit_time = 0  # 上次commit时间，防止短时间内重复commit
+    COMMIT_COOLDOWN = 5.0  # commit冷却时间（秒）
 
     async def periodic_commit():
-        nonlocal last_audio_time, committed_recently
+        nonlocal last_audio_time, last_commit_time
         while True:
             await asyncio.sleep(1.0)
             # 如果正在处理LLM，跳过commit
             if processing:
                 continue
-            # 如果最近已经由客户端 VAD 触发过 commit，跳过
-            if committed_recently:
-                committed_recently = False  # 重置标志
+            # 如果最近已经commit过（冷却期内），跳过
+            if time.time() - last_commit_time < COMMIT_COOLDOWN:
                 continue
             # 兜底：用户停顿3秒后commit
             if last_audio_time > 0 and (time.time() - last_audio_time) > 3.0:
-                try:
-                    await asr.commit()
-                    logger.info("[GW] 兜底: 用户停顿8秒，commit触发识别")
-                except Exception as e:
-                    logger.warning(f"[GW] commit 失败: {e}")
-                last_audio_time = 0  # 重置，等待新的音频活动
+                # 确认有音频活动且已停止
+                time_since_last_audio = time.time() - last_audio_time
+                if time_since_last_audio > 3.0:
+                    try:
+                        await asr.commit()
+                        last_commit_time = time.time()
+                        last_audio_time = 0  # 重置，等待新的音频活动
+                        logger.info(f"[GW] 兜底: 用户停顿{time_since_last_audio:.1f}秒，commit触发识别")
+                    except Exception as e:
+                        logger.warning(f"[GW] commit 失败: {e}")
+                        last_audio_time = 0  # 即使失败也重置，避免重复尝试
 
     commit_task = asyncio.create_task(periodic_commit())
 
@@ -131,9 +135,17 @@ async def gateway_ws(ws: WebSocket):
                     logger.debug(f"[GW] 指令: {action}")
 
                     if action == "speech_end":
-                        logger.info("[GW] 客户端 VAD speech_end → commit")
-                        committed_recently = True  # 标记已 commit，防止 periodic_commit 重复
-                        await asr.commit()
+                        # 防止短时间内重复commit
+                        if time.time() - last_commit_time < COMMIT_COOLDOWN:
+                            logger.debug("[GW] speech_end 冷却中，跳过")
+                        elif last_audio_time > 0:
+                            # 只有在有音频活动时才commit
+                            logger.info("[GW] 客户端 VAD speech_end → commit")
+                            last_commit_time = time.time()
+                            last_audio_time = 0  # 重置，避免periodic_commit重复
+                            await asr.commit()
+                        else:
+                            logger.debug("[GW] speech_end 但无音频活动，跳过")
 
                     elif action == "proactive":
                         logger.info("[GW] 主动搭话")

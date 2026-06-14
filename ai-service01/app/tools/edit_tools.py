@@ -61,6 +61,91 @@ def resize_shape(targetId: str = None, target_tag: str = None, size: str = "medi
 
 
 @ToolRegistry.register(
+    name="reorder_layer",
+    description="调整图形的层级顺序（前后关系）。用于控制哪个图形在前面、哪个在后面。",
+    param_descriptions={
+        "target_tag": "要调整的图形名字",
+        "targetId": "图形ID",
+        "direction": "方向：front=置顶(最前面), back=置底(最后面), forward=上移一层, backward=下移一层",
+    },
+    param_enums={"direction": ["front", "back", "forward", "backward"]},
+)
+def reorder_layer(targetId: str = None, target_tag: str = None, direction: str = "forward") -> str:
+    dir_names = {
+        "front": "置顶",
+        "back": "置底",
+        "forward": "上移一层",
+        "backward": "下移一层"
+    }
+    return f"已{dir_names.get(direction, direction)} {target_tag or targetId}"
+
+
+@ToolRegistry.register(
+    name="delete_by_tag",
+    description="按标签批量删除图形。删除所有匹配指定标签的图形。",
+    param_descriptions={
+        "target_tag": "要删除的图形标签，如'太阳'、'月亮'。会删除所有包含此标签的图形。",
+    },
+)
+def delete_by_tag(target_tag: str = None) -> str:
+    return f"已删除所有 {target_tag}"
+
+
+@ToolRegistry.register(
+    name="save_as_png",
+    description="保存画布为PNG图片。",
+    param_descriptions={
+        "filename": "文件名（可选）",
+    },
+)
+def save_as_png(filename: str = "canvas") -> str:
+    return f"已保存为 {filename}.png"
+
+
+@ToolRegistry.register(
+    name="save_as_svg",
+    description="保存画布为SVG矢量图。",
+    param_descriptions={
+        "filename": "文件名（可选）",
+    },
+)
+def save_as_svg(filename: str = "canvas") -> str:
+    return f"已保存为 {filename}.svg"
+
+
+@ToolRegistry.register(
+    name="group_objects",
+    description="将选中的多个图形编组。",
+    param_descriptions={},
+)
+def group_objects() -> str:
+    return "已编组"
+
+
+@ToolRegistry.register(
+    name="group_by_tag",
+    description="按标签将所有匹配的图形编组。将画布上所有包含指定标签的图形组合成一个整体。",
+    param_descriptions={
+        "target_tag": "要编组的图形标签，如'太阳'。会将所有包含此标签的图形编组。",
+    },
+)
+def group_by_tag(target_tag: str = None) -> str:
+    return f"已将所有 {target_tag} 编组"
+
+
+@ToolRegistry.register(
+    name="ungroup_objects",
+    description="将编组解散。",
+    param_descriptions={
+        "target_tag": "要解散的编组标签",
+        "targetId": "编组ID",
+    },
+)
+def ungroup_objects(target_tag: str = None, targetId: str = None) -> str:
+    return f"已解散编组 {target_tag or targetId}"
+
+
+@ToolRegistry.register(
     name="set_opacity",
     description="设置图形透明度。",
     param_descriptions={"target_tag": "图形名字", "opacity": "透明度0-1"},

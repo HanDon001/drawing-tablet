@@ -65,6 +65,10 @@
                 <span class="w-1.5 h-1.5 rounded-full bg-green-400" id="statusDot"></span>
                 <span id="statusText" class="nav-text">就绪</span>
             </div>
+            <a href="/about.html" target="_blank" class="flex items-center gap-1.5 px-3 py-1.5 rounded-lg transition-all hover:bg-white/10" title="访问官网">
+                <i class="fas fa-globe text-sm"></i>
+                <span class="nav-text">官网</span>
+            </a>
         </div>
     </header>
 
@@ -113,7 +117,7 @@
                             <div class="prop-row"><span class="prop-label">W</span><input type="number" id="propW" class="prop-input" onchange="VCTools.updateScaledWidth(this.value)"></div>
                             <div class="prop-row"><span class="prop-label">H</span><input type="number" id="propH" class="prop-input" onchange="VCTools.updateScaledHeight(this.value)"></div>
                             <div class="prop-row"><span class="prop-label">R</span><input type="number" id="propAngle" class="prop-input" onchange="VCTools.updateProp('angle', this.value)"></div>
-                            <div class="prop-row"><span class="prop-label">Opa</span><input type="number" id="propOpacity" class="prop-input" min="0" max="1" step="0.1" onchange="VCTools.updateProp('opacity', this.value)"></div>
+                            <div class="prop-row"><span class="prop-label">Opa</span><input type="number" id="propOpacity" class="prop-input" min="0" max="1" step="0.1" onchange="VCTools.updateProp('opacity', parseFloat(this.value))"></div>
                         </div>
                         <div class="mt-2 pt-2 border-t border-light-brown">
                             <div class="prop-row"><span class="prop-label">Fill</span><input type="color" id="propFill" class="prop-input h-7 p-0.5 cursor-pointer" onchange="VCTools.updateProp('fill', this.value)"></div>

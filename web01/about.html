@@ -1,0 +1,494 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>VoiceCanvas - 用声音描绘心中的世界</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,400;0,600;0,700;0,800;1,400;1,600&family=Noto+Sans+SC:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.5.1/css/all.min.css">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    colors: {
+                        'deep-brown': '#7A4F28',
+                        'mid-brown': '#9B6A3A',
+                        'light-brown': '#E8D9C7',
+                        'warm-orange': '#E69F56',
+                        'cream': '#F8F5F1',
+                        'body-text': '#333333',
+                    },
+                    fontFamily: {
+                        'display': ['Playfair Display', 'serif'],
+                        'body': ['Noto Sans SC', 'sans-serif'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        :root {
+            --deep-brown: #7A4F28;
+            --mid-brown: #9B6A3A;
+            --light-brown: #E8D9C7;
+            --warm-orange: #E69F56;
+            --cream: #F8F5F1;
+            --white: #FFFFFF;
+            --body-text: #333333;
+            --ease-smooth: cubic-bezier(0.25, 0.46, 0.45, 0.94);
+            --ease-bounce: cubic-bezier(0.34, 1.56, 0.64, 1);
+            --ease-out-expo: cubic-bezier(0.19, 1, 0.22, 1);
+        }
+
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        html { scroll-behavior: smooth; }
+        body { font-family: 'Noto Sans SC', sans-serif; color: var(--body-text); overflow-x: hidden; background: var(--white); }
+
+        /* 粒子与流体背景 */
+        #particleCanvas { position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 1; opacity: 0.4; }
+        .fluid-bg {
+            position: fixed; top: 0; left: 0; width: 100%; height: 100%; pointer-events: none; z-index: 0; opacity: 0.08;
+            background: radial-gradient(ellipse 600px 600px at 20% 30%, var(--warm-orange), transparent),
+                        radial-gradient(ellipse 500px 500px at 80% 70%, var(--mid-brown), transparent),
+                        radial-gradient(ellipse 400px 400px at 50% 50%, var(--light-brown), transparent);
+            animation: fluidMove 20s ease-in-out infinite;
+        }
+        @keyframes fluidMove {
+            0%, 100% { transform: translate(0, 0) scale(1); }
+            25% { transform: translate(30px, -20px) scale(1.05); }
+            50% { transform: translate(-20px, 30px) scale(0.95); }
+            75% { transform: translate(20px, 20px) scale(1.02); }
+        }
+
+        /* 滚动入场动画 */
+        .reveal { opacity: 0; transition: opacity 0.9s var(--ease-smooth), transform 0.9s var(--ease-smooth); }
+        .reveal-up { transform: translateY(60px); }
+        .reveal-left { transform: translateX(-80px); }
+        .reveal-right { transform: translateX(80px); }
+        .reveal-scale { transform: scale(0.85); }
+        .revealed { opacity: 1 !important; transform: translateY(0) translateX(0) scale(1) !important; filter: blur(0) !important; }
+        .delay-100 { transition-delay: 0.1s !important; }
+        .delay-200 { transition-delay: 0.2s !important; }
+        .delay-300 { transition-delay: 0.3s !important; }
+        .delay-400 { transition-delay: 0.4s !important; }
+
+        /* 导航栏 */
+        .main-nav { background: var(--light-brown); transition: all 0.5s var(--ease-smooth); }
+        .main-nav.scrolled { position: fixed; top: 0; left: 0; right: 0; z-index: 1000; background: rgba(232, 217, 199, 0.95); backdrop-filter: blur(12px); box-shadow: 0 4px 30px rgba(122, 79, 40, 0.15); animation: navSlideDown 0.6s var(--ease-bounce); }
+        @keyframes navSlideDown { from { transform: translateY(-100%); } to { transform: translateY(0); } }
+        .nav-link { position: relative; transition: color 0.3s var(--ease-smooth); }
+        .nav-link::after { content: ''; position: absolute; bottom: -4px; left: 0; width: 0; height: 2px; background: var(--warm-orange); transition: width 0.4s var(--ease-out-expo); }
+        .nav-link:hover::after { width: 100%; }
+        .nav-link:hover { color: var(--deep-brown); }
+
+        /* 按钮样式 */
+        .btn-primary { background: var(--warm-orange); color: white; position: relative; overflow: hidden; transition: all 0.4s var(--ease-smooth); }
+        .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 8px 25px rgba(230, 159, 86, 0.35); }
+        .btn-outline { border: 2px solid var(--deep-brown); color: var(--deep-brown); background: transparent; position: relative; overflow: hidden; transition: all 0.4s var(--ease-smooth); z-index: 1; }
+        .btn-outline::before { content: ''; position: absolute; top: 0; left: 0; width: 0; height: 100%; background: var(--deep-brown); transition: width 0.4s var(--ease-out-expo); z-index: -1; }
+        .btn-outline:hover { color: white; transform: translateY(-2px); box-shadow: 0 6px 20px rgba(122, 79, 40, 0.25); }
+        .btn-outline:hover::before { width: 100%; }
+
+        /* 波纹效果 */
+        .ripple-btn { position: relative; overflow: hidden; }
+        .ripple-effect { position: absolute; border-radius: 50%; background: rgba(255, 255, 255, 0.35); transform: scale(0); animation: rippleAnim 0.6s ease-out forwards; pointer-events: none; }
+        @keyframes rippleAnim { to { transform: scale(4); opacity: 0; } }
+
+        /* 脉冲光圈 */
+        .pulse-ring { position: relative; }
+        .pulse-ring::before, .pulse-ring::after { content: ''; position: absolute; top: 50%; left: 50%; width: 100%; height: 100%; border-radius: inherit; border: 2px solid var(--warm-orange); transform: translate(-50%, -50%) scale(1); opacity: 0; }
+        .pulse-ring::before { animation: pulseRing 2s ease-out infinite; }
+        .pulse-ring::after { animation: pulseRing 2s ease-out infinite 1s; }
+        @keyframes pulseRing { 0% { transform: translate(-50%, -50%) scale(1); opacity: 0.6; } 100% { transform: translate(-50%, -50%) scale(1.4); opacity: 0; } }
+
+        /* 光影呼吸 */
+        .breathing-glow { animation: breathGlow 4s ease-in-out infinite; }
+        @keyframes breathGlow { 0%, 100% { box-shadow: 0 0 20px rgba(230, 159, 86, 0.1); } 50% { box-shadow: 0 0 35px rgba(230, 159, 86, 0.25); } }
+
+        /* 流光边框 */
+        @keyframes borderFlow { 0% { background-position: 0% 50%; } 100% { background-position: 200% 50%; } }
+        .flow-border { background: linear-gradient(90deg, var(--light-brown), var(--warm-orange), var(--light-brown), var(--warm-orange)); background-size: 200% 100%; animation: borderFlow 3s linear infinite; }
+
+        /* 微光浮动 */
+        .sparkle { position: absolute; width: 4px; height: 4px; background: var(--warm-orange); border-radius: 50%; opacity: 0; animation: sparkleFloat 4s ease-in-out infinite; }
+        @keyframes sparkleFloat { 0%, 100% { opacity: 0; transform: translateY(0) scale(0); } 50% { opacity: 0.6; transform: translateY(-30px) scale(1); } }
+
+        @media (prefers-reduced-motion: reduce) {
+            *, *::before, *::after { animation-duration: 0.01ms !important; transition-duration: 0.01ms !important; }
+            .reveal { opacity: 1; transform: none; }
+        }
+    </style>
+</head>
+
+<body class="font-body">
+    <!-- 全局背景 -->
+    <div class="fluid-bg" aria-hidden="true"></div>
+    <canvas id="particleCanvas" aria-hidden="true"></canvas>
+
+    <!-- ====== 导航栏 ====== -->
+    <nav class="main-nav py-3 px-4 z-40 relative" id="mainNav" role="navigation">
+        <div class="max-w-7xl mx-auto flex items-center justify-between">
+            <a href="/" class="flex items-center gap-2" aria-label="VoiceCanvas首页">
+                <div class="w-10 h-10 rounded-full bg-deep-brown flex items-center justify-center">
+                    <i class="fas fa-palette text-white text-lg"></i>
+                </div>
+                <span class="font-display text-deep-brown font-bold text-xl tracking-wide">VoiceCanvas</span>
+            </a>
+            <div class="hidden lg:flex items-center gap-8">
+                <a href="#hero" class="nav-link text-deep-brown font-medium text-sm tracking-wide">HOME</a>
+                <a href="#mission" class="nav-link text-deep-brown font-medium text-sm tracking-wide">MISSION</a>
+                <a href="#features" class="nav-link text-deep-brown font-medium text-sm tracking-wide">FEATURES</a>
+                <a href="#tech" class="nav-link text-deep-brown font-medium text-sm tracking-wide">TECH</a>
+                <a href="#try" class="nav-link text-deep-brown font-medium text-sm tracking-wide">TRY IT</a>
+            </div>
+            <a href="/" class="ripple-btn btn-primary px-6 py-2.5 rounded-full text-sm font-medium">
+                <i class="fas fa-microphone mr-2"></i>进入应用
+            </a>
+        </div>
+    </nav>
+
+    <!-- ====== Hero区 ====== -->
+    <section id="hero" class="relative w-full h-screen overflow-hidden flex items-center justify-center">
+        <div class="absolute inset-0 bg-gradient-to-br from-deep-brown/90 via-mid-brown/80 to-cream z-0"></div>
+
+        <div class="absolute inset-0 pointer-events-none overflow-hidden" aria-hidden="true">
+            <div class="sparkle" style="top:20%;left:15%;animation-delay:0s;"></div>
+            <div class="sparkle" style="top:40%;left:70%;animation-delay:1s;"></div>
+            <div class="sparkle" style="top:60%;left:30%;animation-delay:2s;"></div>
+        </div>
+
+        <div class="relative z-10 text-center px-6 max-w-4xl">
+            <div class="inline-block px-4 py-1 bg-warm-orange/20 border border-warm-orange/50 rounded-full mb-6">
+                <span class="text-warm-orange text-sm font-medium tracking-wider">AI-POWERED ACCESSIBLE DRAWING</span>
+            </div>
+            <h1 class="font-display text-white text-5xl md:text-7xl font-bold leading-tight mb-6 reveal reveal-up">
+                用声音，描绘<br>心中的世界
+            </h1>
+            <p class="text-light-brown/90 text-lg md:text-xl mb-10 max-w-2xl mx-auto reveal reveal-up delay-200">
+                无需双手，无需视界。VoiceCanvas 是一款专为残障人士打造的纯语音AI绘图工具，让想象力突破物理界限，自由落笔。
+            </p>
+            <div class="flex flex-col sm:flex-row gap-4 justify-center reveal reveal-up delay-400">
+                <a href="/" class="ripple-btn btn-primary px-8 py-4 rounded-full text-sm font-semibold tracking-wide text-white bg-warm-orange hover:bg-amber-400">
+                    <i class="fas fa-play mr-2"></i>立即体验
+                </a>
+                <a href="#mission" class="btn-outline px-8 py-4 rounded-full text-sm font-semibold tracking-wide text-white border-white/60 hover:text-deep-brown hover:bg-white">
+                    了解理念 <i class="fas fa-arrow-right ml-2 text-xs"></i>
+                </a>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== 理念区 ====== -->
+    <section id="mission" class="py-24 bg-cream relative overflow-hidden">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="grid lg:grid-cols-2 gap-16 items-center">
+                <div class="reveal reveal-left">
+                    <div class="relative rounded-2xl overflow-hidden group">
+                        <img src="https://images.unsplash.com/photo-1582213782179-e0d53f98f2ca?w=800&q=80" alt="艺术创作" class="w-full h-[480px] object-cover transition-transform duration-700 group-hover:scale-105">
+                        <div class="absolute inset-0 bg-gradient-to-t from-deep-brown/20 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-500"></div>
+                        <div class="absolute -bottom-4 -right-4 w-24 h-24 bg-warm-orange/20 rounded-2xl -z-10"></div>
+                        <div class="absolute -top-4 -left-4 w-16 h-16 border-2 border-mid-brown/30 rounded-2xl -z-10"></div>
+                    </div>
+                </div>
+                <div>
+                    <p class="reveal reveal-up text-warm-orange font-medium tracking-widest text-sm mb-3">OUR MISSION</p>
+                    <h2 class="reveal reveal-up delay-100 font-display text-deep-brown text-4xl md:text-5xl font-bold leading-tight mb-6">
+                        技术向善<br>艺术无碍
+                    </h2>
+                    <p class="reveal reveal-up delay-200 text-body-text/70 leading-relaxed mb-4">
+                        肢体不便（如高位截瘫、手部震颤）或视力障碍，不应成为艺术表达的壁垒。我们相信每个人都有创作和表达的权利。
+                    </p>
+                    <p class="reveal reveal-up delay-300 text-body-text/70 leading-relaxed mb-8">
+                        VoiceCanvas 利用通义千问大模型与语音交互闭环，将复杂的绘图操作转化为最自然的对话。只需开口，心中的画面便能跃然屏上。
+                    </p>
+                    <div class="reveal reveal-up delay-400 flex gap-6">
+                        <div class="group cursor-pointer text-center">
+                            <div class="w-20 h-20 rounded-full bg-light-brown flex items-center justify-center mx-auto mb-3 transition-all duration-500 group-hover:rotate-[15deg] group-hover:shadow-lg group-hover:shadow-warm-orange/20 pulse-ring">
+                                <i class="fas fa-universal-access text-deep-brown text-2xl"></i>
+                            </div>
+                            <span class="text-xs font-semibold text-deep-brown tracking-wider">零门槛</span>
+                        </div>
+                        <div class="group cursor-pointer text-center">
+                            <div class="w-20 h-20 rounded-full bg-light-brown flex items-center justify-center mx-auto mb-3 transition-all duration-500 group-hover:rotate-[15deg] group-hover:shadow-lg group-hover:shadow-warm-orange/20 pulse-ring" style="animation-delay: 0.5s;">
+                                <i class="fas fa-ear-listen text-deep-brown text-2xl"></i>
+                            </div>
+                            <span class="text-xs font-semibold text-deep-brown tracking-wider">强闭环</span>
+                        </div>
+                        <div class="group cursor-pointer text-center">
+                            <div class="w-20 h-20 rounded-full bg-light-brown flex items-center justify-center mx-auto mb-3 transition-all duration-500 group-hover:rotate-[15deg] group-hover:shadow-lg group-hover:shadow-warm-orange/20 pulse-ring" style="animation-delay: 1s;">
+                                <i class="fas fa-brain text-deep-brown text-2xl"></i>
+                            </div>
+                            <span class="text-xs font-semibold text-deep-brown tracking-wider">高智能</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== 能力展示区 ====== -->
+    <section id="features" class="py-24 bg-white relative">
+        <div class="max-w-7xl mx-auto px-6 text-center">
+            <p class="reveal reveal-up text-warm-orange font-medium tracking-widest text-sm mb-3">CORE FEATURES</p>
+            <h2 class="reveal reveal-up delay-100 font-display text-deep-brown text-4xl md:text-5xl font-bold leading-tight mb-16">
+                为无障碍创作<br>重新定义交互
+            </h2>
+            <div class="grid sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div class="reveal reveal-up delay-100 bg-cream rounded-2xl p-8 breathing-glow cursor-pointer group ripple-btn transition-all duration-500 hover:scale-[1.03] hover:border-warm-orange/50 border-2 border-transparent">
+                    <div class="w-14 h-14 rounded-full bg-mid-brown/10 flex items-center justify-center mx-auto mb-5 transition-transform duration-500 group-hover:rotate-[360deg]">
+                        <i class="fas fa-microphone-lines text-mid-brown text-xl"></i>
+                    </div>
+                    <h3 class="font-display text-deep-brown text-lg font-bold mb-3 transition-colors duration-300 group-hover:text-mid-brown">纯语音操控</h3>
+                    <p class="text-body-text/60 text-sm leading-relaxed">彻底抛弃鼠标键盘，从起笔到成画，全程只需开口指令。</p>
+                </div>
+                <div class="reveal reveal-up delay-200 bg-cream rounded-2xl p-8 breathing-glow cursor-pointer group ripple-btn transition-all duration-500 hover:scale-[1.03] hover:border-warm-orange/50 border-2 border-transparent">
+                    <div class="w-14 h-14 rounded-full bg-mid-brown/10 flex items-center justify-center mx-auto mb-5 transition-transform duration-500 group-hover:rotate-[360deg]">
+                        <i class="fas fa-map-location-dot text-mid-brown text-xl"></i>
+                    </div>
+                    <h3 class="font-display text-deep-brown text-lg font-bold mb-3 transition-colors duration-300 group-hover:text-mid-brown">语义空间定位</h3>
+                    <p class="text-body-text/60 text-sm leading-relaxed">无需报坐标，说"左上角"、"中间偏右"，AI自动映射画布位置。</p>
+                </div>
+                <div class="reveal reveal-up delay-300 bg-cream rounded-2xl p-8 breathing-glow cursor-pointer group ripple-btn transition-all duration-500 hover:scale-[1.03] hover:border-warm-orange/50 border-2 border-transparent">
+                    <div class="w-14 h-14 rounded-full bg-mid-brown/10 flex items-center justify-center mx-auto mb-5 transition-transform duration-500 group-hover:rotate-[360deg]">
+                        <i class="fas fa-comment-dots text-mid-brown text-xl"></i>
+                    </div>
+                    <h3 class="font-display text-deep-brown text-lg font-bold mb-3 transition-colors duration-300 group-hover:text-mid-brown">视障听觉闭环</h3>
+                    <p class="text-body-text/60 text-sm leading-relaxed">画笔落处必有回声。AI实时语音播报画面内容，视障用户心中有数。</p>
+                </div>
+                <div class="reveal reveal-up delay-400 bg-cream rounded-2xl p-8 breathing-glow cursor-pointer group ripple-btn transition-all duration-500 hover:scale-[1.03] hover:border-warm-orange/50 border-2 border-transparent">
+                    <div class="w-14 h-14 rounded-full bg-mid-brown/10 flex items-center justify-center mx-auto mb-5 transition-transform duration-500 group-hover:rotate-[360deg]">
+                        <i class="fas fa-wand-magic-sparkles text-mid-brown text-xl"></i>
+                    </div>
+                    <h3 class="font-display text-deep-brown text-lg font-bold mb-3 transition-colors duration-300 group-hover:text-mid-brown">模糊意图解析</h3>
+                    <p class="text-body-text/60 text-sm leading-relaxed">说"画个像天空一样的圆"或"把它变大点"，大模型精准理解并执行。</p>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== 技术架构区 ====== -->
+    <section id="tech" class="py-24 bg-cream relative">
+        <div class="max-w-7xl mx-auto px-6">
+            <div class="grid lg:grid-cols-2 gap-16 items-center">
+                <div>
+                    <p class="reveal reveal-up text-warm-orange font-medium tracking-widest text-sm mb-3">TECH ARCHITECTURE</p>
+                    <h2 class="reveal reveal-up delay-100 font-display text-deep-brown text-4xl md:text-5xl font-bold leading-tight mb-6">
+                        双通道引擎<br>响应零延迟
+                    </h2>
+                    <p class="reveal reveal-up delay-200 text-body-text/70 leading-relaxed mb-8">
+                        为了兼顾复杂语义的理解力与绘图操作的即时性，我们首创了"快慢双通道"架构。慢通道由通义千问大模型处理复杂意图，快通道由前端本地拦截撤销/清空等指令，确保体验流畅。
+                    </p>
+                    <div class="reveal reveal-up delay-300 space-y-4">
+                        <div class="flex items-center gap-4 group cursor-pointer">
+                            <div class="w-10 h-10 rounded-full bg-mid-brown/10 flex items-center justify-center transition-all group-hover:bg-mid-brown group-hover:text-white text-mid-brown"><i class="fas fa-ear-listen text-sm"></i></div>
+                            <span class="text-body-text font-medium group-hover:text-deep-brown transition-colors">ASR 语音采集 & VAD 静音检测</span>
+                        </div>
+                        <div class="flex items-center gap-4 group cursor-pointer">
+                            <div class="w-10 h-10 rounded-full bg-mid-brown/10 flex items-center justify-center transition-all group-hover:bg-mid-brown group-hover:text-white text-mid-brown"><i class="fas fa-brain text-sm"></i></div>
+                            <span class="text-body-text font-medium group-hover:text-deep-brown transition-colors">通义千问 Function Calling 动作拆解</span>
+                        </div>
+                        <div class="flex items-center gap-4 group cursor-pointer">
+                            <div class="w-10 h-10 rounded-full bg-mid-brown/10 flex items-center justify-center transition-all group-hover:bg-mid-brown group-hover:text-white text-mid-brown"><i class="fas fa-paintbrush text-sm"></i></div>
+                            <span class="text-body-text font-medium group-hover:text-deep-brown transition-colors">Canvas 对象化状态树渲染</span>
+                        </div>
+                        <div class="flex items-center gap-4 group cursor-pointer">
+                            <div class="w-10 h-10 rounded-full bg-mid-brown/10 flex items-center justify-center transition-all group-hover:bg-mid-brown group-hover:text-white text-mid-brown"><i class="fas fa-volume-up text-sm"></i></div>
+                            <span class="text-body-text font-medium group-hover:text-deep-brown transition-colors">TTS 强制语音确认闭环</span>
+                        </div>
+                    </div>
+                </div>
+                <div class="reveal reveal-right delay-200 relative">
+                    <div class="bg-white rounded-2xl p-8 shadow-xl border border-light-brown/50 relative overflow-hidden">
+                        <div class="absolute top-0 left-0 w-full h-1 flow-border"></div>
+                        <div class="font-mono text-sm text-body-text/80 space-y-3">
+                            <p class="text-mid-brown font-semibold">// 语音指令流转示例</p>
+                            <p><span class="text-warm-orange">User Speech:</span> "在中间画个红色的圆"</p>
+                            <p><span class="text-gray-500">↓ ASR & Fast Path Check</span></p>
+                            <p><span class="text-mid-brown">AI Agent:</span> Intent matched -> Draw Shape</p>
+                            <p><span class="text-gray-500">↓ Function Calling</span></p>
+                            <p class="bg-light-brown/50 p-2 rounded-lg">{ tool: "draw_shape",<br>&nbsp;&nbsp;params: { shape: "circle",<br>&nbsp;&nbsp;&nbsp;&nbsp;color: "red", position: "center" } }</p>
+                            <p><span class="text-gray-500">↓ Action Executor</span></p>
+                            <p><span class="text-green-600">Canvas:</span> Object added. Rendering...</p>
+                            <p><span class="text-gray-500">↓ State Change</span></p>
+                            <p><span class="text-deep-brown">TTS:</span> "好的，我在中间画了一个红色的圆"</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== 体验区 ====== -->
+    <section id="try" class="py-24 bg-white relative">
+        <div class="max-w-4xl mx-auto px-6 text-center">
+            <p class="reveal reveal-up text-warm-orange font-medium tracking-widest text-sm mb-3">INTERACTIVE DEMO</p>
+            <h2 class="reveal reveal-up delay-100 font-display text-deep-brown text-4xl md:text-5xl font-bold leading-tight mb-6">
+                开口即画，亲耳听见
+            </h2>
+            <p class="reveal reveal-up delay-200 text-body-text/70 leading-relaxed mb-12">
+                点击下方麦克风，允许浏览器使用语音权限。试试说："画一个红色的圆"、"把它变蓝"或"画布上有什么"。
+            </p>
+
+            <div class="reveal reveal-scale delay-300 bg-cream rounded-2xl p-6 shadow-xl border border-light-brown/50 relative">
+                <div class="w-full h-80 bg-white rounded-xl mb-6 flex items-center justify-center text-gray-300 border-2 border-dashed border-gray-200" id="demoCanvas">
+                    <span>Canvas 绘制区域</span>
+                </div>
+                <button id="demoMicBtn" class="w-16 h-16 rounded-full bg-mid-brown text-white hover:bg-deep-brown transition-all hover:scale-110 focus:outline-none focus:ring-4 focus:ring-mid-brown/50 relative">
+                    <i class="fas fa-microphone text-2xl"></i>
+                    <div class="absolute inset-0 rounded-full border-2 border-mid-brown animate-ping opacity-20" style="display:none;" id="micPing"></div>
+                </button>
+                <p class="mt-4 text-sm text-gray-500" id="demoStatus">点击麦克风开始说话</p>
+            </div>
+        </div>
+    </section>
+
+    <!-- ====== 底部 ====== -->
+    <footer class="bg-deep-brown text-light-brown py-12 relative z-10">
+        <div class="max-w-7xl mx-auto px-6 text-center">
+            <div class="flex justify-center items-center gap-2 mb-4">
+                <div class="w-8 h-8 rounded-full bg-warm-orange flex items-center justify-center">
+                    <i class="fas fa-palette text-white text-sm"></i>
+                </div>
+                <span class="font-display text-white font-bold text-lg">VoiceCanvas</span>
+            </div>
+            <p class="text-light-brown/60 text-sm mb-6 max-w-md mx-auto">
+                这是一个开源的无障碍辅助技术项目，旨在用 AI 降低创作门槛，让艺术属于每一个人。
+            </p>
+            <div class="flex justify-center gap-6 mb-8">
+                <a href="https://github.com/HanDon001/drawing-tablet" class="text-light-brown/60 hover:text-warm-orange transition-colors text-sm">GitHub</a>
+                <a href="#" class="text-light-brown/60 hover:text-warm-orange transition-colors text-sm">产品文档</a>
+                <a href="#" class="text-light-brown/60 hover:text-warm-orange transition-colors text-sm">技术架构</a>
+                <a href="#" class="text-light-brown/60 hover:text-warm-orange transition-colors text-sm">无障碍倡议</a>
+            </div>
+            <div class="border-t border-light-brown/10 pt-6">
+                <p class="text-light-brown/40 text-xs">© 2024 VoiceCanvas. Built with Love & AI.</p>
+            </div>
+        </div>
+    </footer>
+
+    <!-- 脚本 -->
+    <script>
+        // --- 1. 滚动显现逻辑 ---
+        const revealElements = document.querySelectorAll('.reveal');
+        const revealObserver = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    entry.target.classList.add('revealed');
+                }
+            });
+        }, { threshold: 0.1, rootMargin: '0px 0px -50px 0px' });
+        revealElements.forEach(el => revealObserver.observe(el));
+
+        // --- 2. 导航栏滚动变色 ---
+        const mainNav = document.getElementById('mainNav');
+        window.addEventListener('scroll', () => {
+            if (window.scrollY > 100) {
+                mainNav.classList.add('scrolled');
+            } else {
+                mainNav.classList.remove('scrolled');
+            }
+        });
+
+        // --- 3. 粒子背景 ---
+        const canvas = document.getElementById('particleCanvas');
+        const ctx = canvas.getContext('2d');
+        let particles = [];
+        function resizeCanvas() { canvas.width = window.innerWidth; canvas.height = window.innerHeight; }
+        window.addEventListener('resize', resizeCanvas);
+        resizeCanvas();
+
+        class Particle {
+            constructor() { this.reset(); }
+            reset() {
+                this.x = Math.random() * canvas.width;
+                this.y = Math.random() * canvas.height;
+                this.size = Math.random() * 2 + 0.5;
+                this.speedX = (Math.random() - 0.5) * 0.5;
+                this.speedY = (Math.random() - 0.5) * 0.5;
+                this.opacity = Math.random() * 0.5 + 0.2;
+            }
+            update() {
+                this.x += this.speedX; this.y += this.speedY;
+                if (this.x < 0 || this.x > canvas.width || this.y < 0 || this.y > canvas.height) this.reset();
+            }
+            draw() {
+                ctx.fillStyle = `rgba(155, 106, 58, ${this.opacity})`;
+                ctx.beginPath(); ctx.arc(this.x, this.y, this.size, 0, Math.PI * 2); ctx.fill();
+            }
+        }
+        for (let i = 0; i < 50; i++) particles.push(new Particle());
+        function animateParticles() {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+            particles.forEach(p => { p.update(); p.draw(); });
+            requestAnimationFrame(animateParticles);
+        }
+        animateParticles();
+
+        // --- 4. 波纹效果 ---
+        document.querySelectorAll('.ripple-btn').forEach(btn => {
+            btn.addEventListener('click', function(e) {
+                const rect = btn.getBoundingClientRect();
+                const ripple = document.createElement('span');
+                ripple.className = 'ripple-effect';
+                ripple.style.left = `${e.clientX - rect.left}px`;
+                ripple.style.top = `${e.clientY - rect.top}px`;
+                btn.appendChild(ripple);
+                setTimeout(() => ripple.remove(), 600);
+            });
+        });
+
+        // --- 5. 简易Demo逻辑 ---
+        const demoMicBtn = document.getElementById('demoMicBtn');
+        const demoStatus = document.getElementById('demoStatus');
+        const demoCanvas = document.getElementById('demoCanvas');
+        const micPing = document.getElementById('micPing');
+        let isListeningDemo = false;
+        let recognition = null;
+
+        if ('webkitSpeechRecognition' in window) {
+            recognition = new webkitSpeechRecognition();
+            recognition.lang = 'zh-CN';
+            recognition.continuous = false;
+            recognition.interimResults = false;
+
+            recognition.onstart = () => {
+                isListeningDemo = true;
+                demoStatus.innerText = "聆听中...请说话";
+                micPing.style.display = "block";
+                demoMicBtn.classList.add('bg-red-500');
+                demoMicBtn.classList.remove('bg-mid-brown');
+            };
+
+            recognition.onresult = (event) => {
+                const text = event.results[0][0].transcript;
+                demoStatus.innerText = `识别到：${text}`;
+                if (text.includes('红')) { demoCanvas.style.backgroundColor = '#FEE2E2'; demoCanvas.querySelector('span').innerText = '红色背景'; }
+                else if (text.includes('蓝')) { demoCanvas.style.backgroundColor = '#DBEAFE'; demoCanvas.querySelector('span').innerText = '蓝色背景'; }
+                else if (text.includes('圆')) { demoCanvas.querySelector('span').innerText = '🔵 (模拟画圆)'; }
+                else { demoCanvas.querySelector('span').innerText = `收到指令：${text}`; }
+            };
+
+            recognition.onend = () => {
+                isListeningDemo = false;
+                demoStatus.innerText = "点击麦克风开始说话";
+                micPing.style.display = "none";
+                demoMicBtn.classList.remove('bg-red-500');
+                demoMicBtn.classList.add('bg-mid-brown');
+            };
+
+            recognition.onerror = () => { recognition.onend(); };
+
+            demoMicBtn.addEventListener('click', () => {
+                if (!isListeningDemo) recognition.start();
+                else recognition.stop();
+            });
+        } else {
+            demoMicBtn.disabled = true;
+            demoStatus.innerText = "您的浏览器不支持语音识别，请使用Chrome";
+        }
+    </script>
+</body>
+</html>

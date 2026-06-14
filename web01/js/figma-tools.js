@@ -389,7 +389,10 @@
         document.getElementById('propW').value = Math.round(obj.getScaledWidth());
         document.getElementById('propH').value = Math.round(obj.getScaledHeight());
         document.getElementById('propAngle').value = Math.round(obj.angle);
-        document.getElementById('propOpacity').value = obj.opacity;
+        const opacity = obj.opacity !== undefined ? obj.opacity : 1;
+        document.getElementById('propOpacity').value = opacity;
+        const slider = document.getElementById('propOpacitySlider');
+        if (slider) slider.value = Math.round(opacity * 100);
         document.getElementById('propFill').value = obj.fill || '#ffffff';
         document.getElementById('propStroke').value = obj.stroke || '#000000';
         document.getElementById('propRx').value = obj.rx || 0;
@@ -513,9 +516,11 @@
         }
 
         // 图层名称
+        const opacity = obj.opacity !== undefined ? obj.opacity : 1;
+        const opacityText = opacity < 1 ? ` ${Math.round(opacity * 100)}%` : '';
         const nameHtml = isGroup
             ? `<span class="text-[10px] truncate flex-1">${typeName} (${childCount})</span>`
-            : `<span class="text-[10px] truncate flex-1">${obj.tag || typeName}</span>`;
+            : `<span class="text-[10px] truncate flex-1">${obj.tag || typeName}${opacityText}</span>`;
 
         // 展开/折叠按钮
         const expandBtn = isGroup
