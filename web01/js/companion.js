@@ -593,9 +593,10 @@
                 for (let i = 0; i < objs.length; i++) {
                     for (let j = i + 1; j < objs.length; j++) {
                         const a = objs[i], b = objs[j]
-                        if (a.x !== undefined && b.x !== undefined) {
-                            const dx = (b.x - a.x) * canvasW
-                            const dy = (b.y - a.y) * canvasH
+                        const ax = a.left, bx = b.left
+                        if (ax !== undefined && bx !== undefined) {
+                            const dx = bx - ax
+                            const dy = (b.top || 0) - (a.top || 0)
                             const dist = Math.round(Math.sqrt(dx * dx + dy * dy))
                             const dir = Math.abs(dx) > Math.abs(dy)
                                 ? (dx > 0 ? '右' : '左')
@@ -610,7 +611,7 @@
                 if (rels.length > 0) relations = '\n空间关系: ' + rels.slice(0, 10).join('；')
             }
 
-            const canvasInfo = `画布${canvasW}x${canvasH}px 坐标系(0-1) (0,0)=左上 (0.5,0.5)=中心 (1,1)=右下`
+            const canvasInfo = `画布${canvasW}x${canvasH}px。坐标系：(0,0)=左上角，单位=像素。left/top=图形左上角(originX:left)`
             sendJSON({ action: 'text', text, canvas_context: `${canvasInfo}\n对象:\n${ctx}${relations}` })
         },
 

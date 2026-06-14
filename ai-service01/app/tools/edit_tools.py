@@ -3,7 +3,7 @@
 """
 
 from .registry import ToolRegistry
-from ..schemas.canvas import VALID_SIZES, VALID_POSITIONS, POSITION_NAMES
+from ..schemas.canvas import VALID_SIZES, VALID_POSITIONS
 
 COLORS_ENUM = ["红", "蓝", "绿", "黄", "紫", "橙", "粉", "黑", "白", "灰", "无"]
 DIRECTION_ENUM = ["front", "back", "forward", "backward"]
@@ -29,7 +29,7 @@ def edit_shape(target_tag: str = None, targetId: str = None, new_color: str = No
                new_size: str = None, new_position: str = None, new_opacity: float = None,
                new_stroke_color: str = None, new_stroke_width: int = None,
                new_tag: str = None) -> str:
-    return f"已修改 {target_tag or targetId}"
+    return f"edit_shape已执行: target_tag={target_tag}, new_color={new_color}"
 
 
 @ToolRegistry.register(
@@ -46,8 +46,7 @@ def edit_shape(target_tag: str = None, targetId: str = None, new_color: str = No
 )
 def move_shape(targetId: str = None, target_tag: str = None,
                position: str = "center", x: float = -1, y: float = -1) -> str:
-    loc = f"({x},{y})" if x >= 0 and y >= 0 else POSITION_NAMES.get(position, position)
-    return f"已移动到{loc}"
+    return f"move_shape已执行: target_tag={target_tag}, position={position}, x={x}, y={y}"
 
 
 @ToolRegistry.register(
@@ -57,7 +56,7 @@ def move_shape(targetId: str = None, target_tag: str = None,
     param_enums={"size": VALID_SIZES},
 )
 def resize_shape(targetId: str = None, target_tag: str = None, size: str = "medium") -> str:
-    return f"已调整为{size}"
+    return f"resize_shape已执行: target_tag={target_tag}, size={size}"
 
 
 @ToolRegistry.register(
@@ -71,24 +70,18 @@ def resize_shape(targetId: str = None, target_tag: str = None, size: str = "medi
     param_enums={"direction": ["front", "back", "forward", "backward"]},
 )
 def reorder_layer(targetId: str = None, target_tag: str = None, direction: str = "forward") -> str:
-    dir_names = {
-        "front": "置顶",
-        "back": "置底",
-        "forward": "上移一层",
-        "backward": "下移一层"
-    }
-    return f"已{dir_names.get(direction, direction)} {target_tag or targetId}"
+    return f"reorder_layer已执行: target_tag={target_tag}, direction={direction}"
 
 
 @ToolRegistry.register(
     name="delete_by_tag",
-    description="按标签批量删除图形。删除所有匹配指定标签的图形。",
+    description="按标签批量删除图形。删除所有匹配指定标签的图形。注意：只能删除有tag的对象，无tag的对象无法删除。",
     param_descriptions={
         "target_tag": "要删除的图形标签，如'太阳'、'月亮'。会删除所有包含此标签的图形。",
     },
 )
 def delete_by_tag(target_tag: str = None) -> str:
-    return f"已删除所有 {target_tag}"
+    return f"delete_by_tag已执行: target_tag={target_tag}"
 
 
 @ToolRegistry.register(

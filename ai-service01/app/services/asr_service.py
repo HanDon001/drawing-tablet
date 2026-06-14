@@ -13,11 +13,11 @@ from ..exceptions import ASRError
 
 
 async def transcribe(pcm_data: bytes, request_id: str = "unknown") -> str:
-    """一次性 ASR 识别"""
+    """一次性 ASR 识别 — 快速模式"""
     url = f"{settings.ASR_REALTIME_URL}?model={settings.ASR_MODEL}"
     headers = {"Authorization": f"Bearer {settings.DASHSCOPE_API_KEY}"}
 
-    logger.info(f"[ASR] [{request_id}] 连接: model={settings.ASR_MODEL}, 音频={len(pcm_data)}bytes")
+    logger.info(f"[ASR] [{request_id}] 连接: 音频={len(pcm_data)}bytes")
 
     try:
         ws = await websockets.connect(url, extra_headers=headers, max_size=10*1024*1024)
@@ -26,14 +26,13 @@ async def transcribe(pcm_data: bytes, request_id: str = "unknown") -> str:
         raise ASRError(f"ASR 连接失败: {e}")
 
     try:
-        # session.created
+        # 等待 session.created
         raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
         msg = json.loads(raw)
         if msg.get("type") != "session.created":
             raise ASRError(f"期望 session.created，收到 {msg.get('type')}")
-        logger.info(f"[ASR] [{request_id}] session 已创建")
 
-        # session.update（必须，DashScope 要求）
+        # 发送 session.update
         await ws.send(json.dumps({
             "type": "session.update",
             "session": {
@@ -44,28 +43,23 @@ async def transcribe(pcm_data: bytes, request_id: str = "unknown") -> str:
                 "turn_detection": {"type": "server_vad"},
             }
         }))
+
+        # 预编码整个音频为 base64，一次性发送
+        audio_b64 = base64.b64encode(pcm_data).decode()
+
+        # 等待 session.updated（与音频编码并行）
         raw = await asyncio.wait_for(ws.recv(), timeout=5.0)
         msg = json.loads(raw)
         if msg.get("type") != "session.updated":
-            raise ASRError(f"期望 session.updated，收到 {msg.get('type')}: {msg.get('error',{}).get('message','')}")
-        logger.info(f"[ASR] [{request_id}] session.updated")
+            raise ASRError(f"期望 session.updated，收到 {msg.get('type')}")
 
-        # 分块发送音频（小块 + 延迟，模拟实时流）
-        chunk_size = 6400  # 200ms @ 16kHz 16bit
-        chunks = 0
-        for i in range(0, len(pcm_data), chunk_size):
-            chunk = pcm_data[i:i + chunk_size]
-            await ws.send(json.dumps({
-                "type": "input_audio_buffer.append",
-                "audio": base64.b64encode(chunk).decode(),
-            }))
-            chunks += 1
-            await asyncio.sleep(0.05)  # 50ms 延迟
-
-        # 等待音频处理后再 commit
-        await asyncio.sleep(0.5)
+        # 一次性发送全部音频 + 立即 commit
+        await ws.send(json.dumps({
+            "type": "input_audio_buffer.append",
+            "audio": audio_b64,
+        }))
         await ws.send(json.dumps({"type": "input_audio_buffer.commit"}))
-        logger.info(f"[ASR] [{request_id}] 音频已发送: {chunks} 块, {len(pcm_data)} bytes")
+        logger.info(f"[ASR] [{request_id}] 音频已发送: {len(pcm_data)} bytes")
 
         # 接收结果
         async with asyncio.timeout(30):

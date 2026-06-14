@@ -214,12 +214,10 @@
          * 编辑图形属性（Fabric.js 版本）
          */
         editShape(params) {
-            const obj = this._resolveTarget(params.target_tag || params.targetId);
-            if (!obj) {
-                if (VC.Log) VC.Log.add('system', '⚠️ 未找到目标图形');
-                return false;
-            }
+            const tag = params.target_tag || params.targetId;
+            if (!tag) return false;
 
+            // 构建更新内容
             const updates = {};
             let newColor = params.new_color || params.newColor;
             if (newColor !== undefined) {
@@ -228,9 +226,8 @@
             if (params.new_size) {
                 const sizeMap = { small: 40, medium: 80, large: 140 };
                 const s = typeof params.new_size === 'number' ? params.new_size : (sizeMap[params.new_size] || 80);
-                const scale = s / (obj.width || 80);
-                updates.scaleX = scale;
-                updates.scaleY = scale;
+                updates.scaleX = s / 80;
+                updates.scaleY = s / 80;
             }
             if (params.new_opacity !== undefined) updates.opacity = params.new_opacity;
             if (params.newOpacity !== undefined) updates.opacity = params.newOpacity;
@@ -242,121 +239,174 @@
             if (params.newStrokeWidth !== undefined) updates.strokeWidth = params.newStrokeWidth;
             if (params.new_tag) updates.tag = params.new_tag;
 
-            const success = VCTools.updateObject(obj, updates);
+            // 按 tag 批量修改所有匹配对象
+            const objs = VCTools ? VCTools.getObjects() : [];
+            const targets = objs.filter(o => o.tag && o.tag.includes(tag));
+            if (targets.length === 0) return false;
 
-            if (success && VC.Log) {
-                VC.Log.add('cmd', `已修改: ${obj.tag || obj.type}`);
-            }
+            VC.State.saveHistory();
+            let count = 0;
+            targets.forEach(obj => {
+                if (VCTools.updateObject(obj, updates)) count++;
+            });
 
-            return success;
+            if (VC.Log) VC.Log.add('cmd', `已修改 ${count} 个: ${tag}`);
+            return count > 0;
         },
 
         /**
          * 移动图形
          */
         moveShape(params) {
-            const obj = this._resolveTarget(params.target_tag || params.targetId);
-            if (!obj) return false;
+            const tag = params.target_tag || params.targetId;
+            if (!tag) return false;
+            const objs = VCTools ? VCTools.getObjects() : [];
+            const targets = objs.filter(o => o.tag && o.tag.includes(tag));
+            if (targets.length === 0) return false;
 
+            const canvasW = VCTools.canvas.width;
+            const canvasH = VCTools.canvas.height;
             const hasCoords = params.x !== undefined && params.y !== undefined;
+
+            VC.State.saveHistory();
+
+            let updates;
             if (hasCoords) {
-                const canvasW = VCTools.canvas.width;
-                const canvasH = VCTools.canvas.height;
-                VCTools.updateObject(obj, {
-                    left: params.x * canvasW,
-                    top: params.y * canvasH,
-                });
+                updates = { left: params.x * canvasW, top: params.y * canvasH };
             } else {
-                // 位置名称 → 坐标
                 const posMap = {
                     center: [0.5, 0.5], left_top: [0.25, 0.25], top: [0.5, 0.25], right_top: [0.75, 0.25],
                     left: [0.25, 0.5], right: [0.75, 0.5],
                     left_bottom: [0.25, 0.75], bottom: [0.5, 0.75], right_bottom: [0.75, 0.75]
                 };
                 const pos = posMap[params.position || 'center'] || posMap.center;
-                VCTools.updateObject(obj, {
-                    left: pos[0] * VCTools.canvas.width,
-                    top: pos[1] * VCTools.canvas.height,
-                });
+                updates = { left: pos[0] * canvasW, top: pos[1] * canvasH };
             }
 
-            const success = true;
+            let count = 0;
+            targets.forEach(obj => {
+                if (VCTools.updateObject(obj, updates)) count++;
+            });
 
             if (VC.Log) {
                 const label = hasCoords ? `(${params.x},${params.y})` : (POS_NAMES[params.position] || params.position);
-                VC.Log.add('cmd', `移动: ${obj.tag || obj.shape} → ${label}`);
+                VC.Log.add('cmd', `移动${tag}: ${count}个对象 → ${label}`);
             }
 
-            return success;
+            return count > 0;
         },
 
         /**
          * 调整大小
          */
         resizeShape(params) {
-            const obj = this._resolveTarget(params.target_tag || params.targetId);
-            if (!obj) return false;
+            const tag = params.target_tag || params.targetId;
+            if (!tag) return false;
+            const objs = VCTools ? VCTools.getObjects() : [];
+            const targets = objs.filter(o => o.tag && o.tag.includes(tag));
+            if (targets.length === 0) return false;
 
-            const success = VC.State.updateObject(obj.id, { size: params.size });
+            VC.State.saveHistory();
+            let count = 0;
+            targets.forEach(obj => {
+                if (VC.State.updateObject(obj.id, { size: params.size })) count++;
+            });
 
-            if (success && VC.Log) {
-                VC.Log.add('cmd', `调整大小: ${obj.tag || obj.shape} → ${params.size}`);
-            }
-
-            return success;
+            if (VC.Log) VC.Log.add('cmd', `调整大小${tag}: ${count}个对象 → ${params.size}`);
+            return count > 0;
         },
 
         /**
          * 设置透明度
          */
         setOpacity(params) {
-            const obj = this._resolveTarget(params.target_tag || params.targetId);
-            if (!obj) return false;
+            const tag = params.target_tag || params.targetId;
+            if (!tag) return false;
+            const objs = VCTools ? VCTools.getObjects() : [];
+            const targets = objs.filter(o => o.tag && o.tag.includes(tag));
+            if (targets.length === 0) return false;
 
-            const success = VC.State.updateObject(obj.id, { opacity: params.opacity });
+            VC.State.saveHistory();
+            let count = 0;
+            targets.forEach(obj => {
+                if (VC.State.updateObject(obj.id, { opacity: params.opacity })) count++;
+            });
 
-            if (success && VC.Log) {
-                VC.Log.add('cmd', `透明度: ${obj.tag || obj.shape} → ${params.opacity}`);
-            }
-
-            return success;
+            if (VC.Log) VC.Log.add('cmd', `透明度${tag}: ${count}个对象 → ${params.opacity}`);
+            return count > 0;
         },
 
         /**
          * 设置边框
          */
         setStroke(params) {
-            const obj = this._resolveTarget(params.target_tag || params.targetId);
-            if (!obj) return false;
+            const tag = params.target_tag || params.targetId;
+            if (!tag) return false;
+            const objs = VCTools ? VCTools.getObjects() : [];
+            const targets = objs.filter(o => o.tag && o.tag.includes(tag));
+            if (targets.length === 0) return false;
 
             const updates = {};
             if (params.stroke_color) updates.strokeColor = params.stroke_color;
             if (params.stroke_width) updates.strokeWidth = params.stroke_width;
 
-            const success = VC.State.updateObject(obj.id, updates);
+            VC.State.saveHistory();
+            let count = 0;
+            targets.forEach(obj => {
+                if (VC.State.updateObject(obj.id, updates)) count++;
+            });
 
-            if (success && VC.Log) {
-                VC.Log.add('cmd', `边框: ${obj.tag || obj.shape} → ${params.stroke_color}`);
-            }
-
-            return success;
+            if (VC.Log) VC.Log.add('cmd', `边框${tag}: ${count}个对象 → ${params.stroke_color}`);
+            return count > 0;
         },
 
         /**
          * 旋转图形
          */
         rotateShape(params) {
-            const obj = this._resolveTarget(params.target_tag || params.targetId);
-            if (!obj) return false;
+            const tag = params.target_tag || params.targetId;
+            if (!tag) return false;
+            const objs = VCTools ? VCTools.getObjects() : [];
+            const targets = objs.filter(o => o.tag && o.tag.includes(tag));
+            if (targets.length === 0) return false;
 
             const angle = params.angle || 0;
-            const success = VC.State.updateObject(obj.id, { rotation: angle });
+            VC.State.saveHistory();
+            let count = 0;
+            targets.forEach(obj => {
+                if (VC.State.updateObject(obj.id, { rotation: angle })) count++;
+            });
 
-            if (success && VC.Log) {
-                VC.Log.add('cmd', `旋转: ${obj.tag || obj.shape} → ${angle}°`);
-            }
+            if (VC.Log) VC.Log.add('cmd', `旋转${tag}: ${count}个对象 → ${angle}°`);
+            return count > 0;
+        },
 
-            return success;
+        /**
+         * 调整图层顺序
+         */
+        reorderShape(params) {
+            const tag = params.target_tag || params.targetId;
+            if (!tag) return false;
+            const objs = VCTools ? VCTools.getObjects() : [];
+            const targets = objs.filter(o => o.tag && o.tag.includes(tag));
+            if (targets.length === 0) return false;
+
+            const canvas = VCTools.canvas;
+            const direction = params.direction || 'forward';
+            VC.State.saveHistory();
+
+            targets.forEach(obj => {
+                switch (direction) {
+                    case 'front': canvas.bringToFront(obj); break;
+                    case 'back': canvas.sendToBack(obj); break;
+                    case 'forward': canvas.bringForward(obj); break;
+                    case 'backward': canvas.sendBackwards(obj); break;
+                }
+            });
+            canvas.renderAll();
+
+            if (VC.Log) VC.Log.add('cmd', `图层${tag}: ${direction} (${targets.length}个对象)`);
+            return true;
         },
 
         // ─── 删除 ─────────────────────────────────────
@@ -548,10 +598,10 @@
 
             const objs = VCTools ? VCTools.getObjects() : [];
             const toDelete = objs.filter(o => {
-                // 匹配标签（支持部分匹配）
-                const objTag = (o.tag || '').toLowerCase();
+                if (!o.tag) return false; // 无标签的对象不匹配
+                const objTag = o.tag.toLowerCase();
                 const searchTag = tag.toLowerCase();
-                return objTag.includes(searchTag) || searchTag.includes(objTag);
+                return objTag.includes(searchTag);
             });
 
             if (toDelete.length === 0) {
@@ -1203,10 +1253,12 @@
                     // 创建 Fabric 对象
                     let obj = null;
                     // 提取 originX/originY，创建后单独设置
-                    const originX = opts.originX || 'center';
-                    const originY = opts.originY || 'center';
+                    const originX = opts.originX || 'left';
+                    const originY = opts.originY || 'top';
                     delete opts.originX;
                     delete opts.originY;
+
+                    // 不做坐标转换，LLM 输出的像素坐标直接使用
 
                     switch (type) {
                         case 'rect':
@@ -1543,8 +1595,8 @@
             let obj = objs.find(o => o.tag === ref);
             if (obj) return obj;
 
-            // 按 tag 模糊查找（包含关系，如"树"匹配"树干"、"树冠"）
-            obj = objs.find(o => o.tag && (o.tag.includes(ref) || ref.includes(o.tag)));
+            // 按 tag 模糊查找（ref 包含在 tag 中，如"树"匹配"树干"）
+            obj = objs.find(o => o.tag && o.tag.includes(ref));
             if (obj) return obj;
 
             // 按 id 查找
