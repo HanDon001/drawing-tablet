@@ -7,7 +7,7 @@
  * 输出消息类型:
  *   { type: 'speech_start' }              — 检测到人声开始
  *   { type: 'audio', data: Float32Array } — 人声音频帧（原始采样率）
- *   { type: 'speech_end' }                — 人声结束（静音 2.5秒后）
+ *   { type: 'speech_end' }                — 人声结束（静音 1.5秒后）
  */
 
 class VADProcessor extends AudioWorkletProcessor {
@@ -16,9 +16,9 @@ class VADProcessor extends AudioWorkletProcessor {
     this.speaking = false
     this.silenceFrames = 0
     this.energyThreshold = 0.02    // 提高阈值，过滤环境噪音
-    // hangover 时间 0.6秒，快速响应
-    // 48kHz / 128 samples = 375 帧/秒，0.6秒 = 225帧
-    this.hangoverFrames = 225      // 静音后继续发 0.6秒
+    // hangover 时间 1.5秒，避免中文说话中途被截断
+    // 48kHz / 128 samples = 375 帧/秒，1.5秒 = 563帧
+    this.hangoverFrames = 563      // 静音后继续发 1.5秒
     this.frameCount = 0
     this.debugSent = false
   }

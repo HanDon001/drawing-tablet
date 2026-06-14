@@ -34,6 +34,17 @@ class ReActAgent:
                 logger.error(f"[ReAct] 第{round_num}轮失败: {e}")
                 break
 
+            # 空响应重试：LLM 返回 content=None + tool_calls=None 时重试一次
+            if not tool_calls and not msg.content and not hasattr(self, '_retried'):
+                self._retried = True
+                logger.warning(f"[ReAct] 第{round_num}轮空响应, 重试一次...")
+                try:
+                    msg, tool_calls, elapsed = await planner.think(messages, tool_groups)
+                except Exception as e:
+                    logger.error(f"[ReAct] 重试失败: {e}")
+            elif hasattr(self, '_retried'):
+                del self._retried
+
             if not tool_calls:
                 reply = planner.extract_reply(msg)
                 logger.info(f"[ReAct] 完成 ({elapsed:.1f}s)")

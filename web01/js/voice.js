@@ -173,13 +173,14 @@
         },
 
         /**
-         * ArrayBuffer → Base64
+         * ArrayBuffer → Base64（分块处理，避免主线程阻塞）
          */
         _arrayBufferToBase64(buffer) {
             const bytes = new Uint8Array(buffer);
+            const CHUNK = 8192;
             let binary = '';
-            for (let i = 0; i < bytes.length; i++) {
-                binary += String.fromCharCode(bytes[i]);
+            for (let i = 0; i < bytes.length; i += CHUNK) {
+                binary += String.fromCharCode.apply(null, bytes.subarray(i, i + CHUNK));
             }
             return btoa(binary);
         },

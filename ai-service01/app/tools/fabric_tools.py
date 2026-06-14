@@ -11,7 +11,7 @@ from .registry import ToolRegistry
     name="inject_fabric_json",
     description="直接注入Fabric.js JSON到画布。支持任意复杂图形、编组、文字、阴影、圆角等。这是最强大的绘图工具，能画出任何效果。",
     param_descriptions={
-        "json_data": "Fabric.js JSON字符串，必须是字符串格式！格式：{\"version\":\"5.3.1\",\"objects\":[{\"type\":\"rect\",\"left\":400,\"top\":300,\"width\":100,\"height\":100,\"fill\":\"#FF0000\"}]}",
+        "json_data": "Fabric.js JSON字符串，坐标用像素。格式：{\"version\":\"5.3.1\",\"objects\":[{\"type\":\"rect\",\"left\":355,\"top\":370,\"width\":160,\"height\":50,\"fill\":\"#FF0000\"}]}",
     },
 )
 def inject_fabric_json(json_data: str = "{}", **kwargs) -> str:
@@ -52,8 +52,8 @@ def inject_fabric_json(json_data: str = "{}", **kwargs) -> str:
     description="创建单个Fabric.js对象。支持rect/circle/triangle/text/line/polygon。参数灵活，未识别的参数会忽略。",
     param_descriptions={
         "object_type": "对象类型: rect/circle/triangle/text/path/polygon/line",
-        "left": "X坐标(px)，画布800宽",
-        "top": "Y坐标(px)，画布600高",
+        "left": "X坐标(px)，画布宽如1191",
+        "top": "Y坐标(px)，画布高如790",
         "fill": "填充颜色",
         "stroke": "描边颜色",
         "stroke_width": "描边宽度",
@@ -148,6 +148,7 @@ def create_fabric_object(
         obj["y2"] = top
         obj["fill"] = "transparent"
         obj["stroke"] = fill
+        obj["strokeWidth"] = stroke_width
 
     # 阴影
     if shadow:
