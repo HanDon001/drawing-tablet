@@ -58,15 +58,15 @@ Layer 3: LLM 自主决策 → ReAct 循环
 
 **路由分组：**
 
-| 分组 | 关键词示例 | 工具集 | 排他性 |
-|------|-----------|--------|--------|
-| `create` | 画、绘制、创建 | draw_shape, inject_fabric_json | 否 |
-| `edit` | 改、修改、移动、变色、删除 | edit_shape, move_shape, delete_by_tag 等 19 个 | 否 |
-| `delete` | 删、删除、清空、去掉 | delete_shape, delete_by_tag, delete_all | 是（排除 create/edit） |
-| `vector` | 心形、螺旋、波浪、花朵、树 | add_vector_shape | 是（排除 create） |
-| `vector_gen` | 矢量图、插画、图表 | inject_fabric_json | 是（排除 create/vector） |
-| `image_gen` | 猫咪、风景、油画、3D、写实 | ai_generate_image | 是（排除 create/vector_gen） |
-| `query` | 看看、有什么、列出 | list_shapes, describe_canvas | 否 |
+| 分组         | 关键词示例                 | 工具集                                         | 排他性                       |
+| ------------ | -------------------------- | ---------------------------------------------- | ---------------------------- |
+| `create`     | 画、绘制、创建             | draw_shape, inject_fabric_json                 | 否                           |
+| `edit`       | 改、修改、移动、变色、删除 | edit_shape, move_shape, delete_by_tag 等 19 个 | 否                           |
+| `delete`     | 删、删除、清空、去掉       | delete_shape, delete_by_tag, delete_all        | 是（排除 create/edit）       |
+| `vector`     | 心形、螺旋、波浪、花朵、树 | add_vector_shape                               | 是（排除 create）            |
+| `vector_gen` | 矢量图、插画、图表         | inject_fabric_json                             | 是（排除 create/vector）     |
+| `image_gen`  | 猫咪、风景、油画、3D、写实 | ai_generate_image                              | 是（排除 create/vector_gen） |
+| `query`      | 看看、有什么、列出         | list_shapes, describe_canvas                   | 否                           |
 
 ### 工具执行流程
 
@@ -93,48 +93,16 @@ for round in range(1, 6):
 
 基于 **Fabric.js** 构建的 Figma 级画布引擎，支持完整的图层管理和对象操作。
 
-### 画布架构
-
-```
-┌─────────────────────────────────────────┐
-│              Fabric.js Canvas            │
-│                                          │
-│  ┌─────────────────────────────────────┐ │
-│  │  对象栈（Z轴从底到顶）              │ │
-│  │                                     │ │
-│  │  [0] 星空背景 (rect)                │ │
-│  │  [1] 海洋 (rect + ellipse)          │ │
-│  │  [2] 月亮 (circle × 7)              │ │
-│  │  [3] 星星 (circle × 20)             │ │ ← 最顶层
-│  │                                     │ │
-│  └─────────────────────────────────────┘ │
-│                                          │
-│  每个对象属性:                            │
-│  ├── id: 唯一标识                        │
-│  ├── tag: 用户可读标签（如"星星"）       │
-│  ├── type: rect/circle/ellipse/text/...  │
-│  ├── left/top: 位置（像素，左上角原点）   │
-│  ├── width/height: 尺寸                  │
-│  ├── fill: 填充颜色                      │
-│  ├── stroke/strokeWidth: 描边            │
-│  ├── opacity: 透明度 (0-1)               │
-│  ├── angle: 旋转角度                     │
-│  ├── scaleX/scaleY: 缩放                 │
-│  └── originX/originY: 定位原点 (left/top)│
-│                                          │
-└─────────────────────────────────────────┘
-```
-
 ### 图层操作（VCLayer）
 
-| 操作 | 方法 | 语音指令 |
-|------|------|----------|
-| 置顶 | `canvas.bringToFront(obj)` | "把海洋放到最上面" |
-| 置底 | `canvas.sendToBack(obj)` | "把海洋放到最下面" |
-| 上移一层 | `canvas.bringForward(obj)` | "把海洋上移一层" |
-| 下移一层 | `canvas.sendBackwards(obj)` | "把海洋下移一层" |
-| 组内上移 | 手动操作 `_objects` 数组 | 编组内部调整 |
-| 组内下移 | 手动操作 `_objects` 数组 | 编组内部调整 |
+| 操作     | 方法                        | 语音指令           |
+| -------- | --------------------------- | ------------------ |
+| 置顶     | `canvas.bringToFront(obj)`  | "把海洋放到最上面" |
+| 置底     | `canvas.sendToBack(obj)`    | "把海洋放到最下面" |
+| 上移一层 | `canvas.bringForward(obj)`  | "把海洋上移一层"   |
+| 下移一层 | `canvas.sendBackwards(obj)` | "把海洋下移一层"   |
+| 组内上移 | 手动操作 `_objects` 数组    | 编组内部调整       |
+| 组内下移 | 手动操作 `_objects` 数组    | 编组内部调整       |
 
 ### Tag 系统（核心设计）
 
@@ -175,17 +143,17 @@ LLM: edit_shape(target_tag="星星", new_color="黄")
 
 **九宫格位置映射：**
 
-| 位置名称 | 坐标 (相对画布) |
-|----------|----------------|
-| left_top | (25%, 25%) |
-| top | (50%, 25%) |
-| right_top | (75%, 25%) |
-| left | (25%, 50%) |
-| center | (50%, 50%) |
-| right | (75%, 50%) |
-| left_bottom | (25%, 75%) |
-| bottom | (50%, 75%) |
-| right_bottom | (75%, 75%) |
+| 位置名称     | 坐标 (相对画布) |
+| ------------ | --------------- |
+| left_top     | (25%, 25%)      |
+| top          | (50%, 25%)      |
+| right_top    | (75%, 25%)      |
+| left         | (25%, 50%)      |
+| center       | (50%, 50%)      |
+| right        | (75%, 50%)      |
+| left_bottom  | (25%, 75%)      |
+| bottom       | (50%, 75%)      |
+| right_bottom | (75%, 75%)      |
 
 ---
 
@@ -193,9 +161,9 @@ LLM: edit_shape(target_tag="星星", new_color="黄")
 
 ### 两种模式
 
-| 模式 | 触发方式 | ASR 引擎 | 特点 |
-|------|----------|----------|------|
-| 麦克风模式 | 点击麦克风按钮 | Web Speech API | 简单直接，浏览器内置 |
+| 模式        | 触发方式         | ASR 引擎            | 特点                                  |
+| ----------- | ---------------- | ------------------- | ------------------------------------- |
+| 麦克风模式  | 点击麦克风按钮   | Web Speech API      | 简单直接，浏览器内置                  |
 | AI 陪伴模式 | 点击 AI 模式按钮 | DashScope WebSocket | 流式识别，实时 partial 结果，支持打断 |
 
 ### AI 陪伴模式状态机
@@ -273,10 +241,10 @@ npm run dev
 
 ### 访问地址
 
-| 服务 | 地址 |
-|------|------|
-| 前端 | http://localhost:5173 |
-| 后端 | http://localhost:8000 |
+| 服务     | 地址                       |
+| -------- | -------------------------- |
+| 前端     | http://localhost:5173      |
+| 后端     | http://localhost:8000      |
 | API 文档 | http://localhost:8000/docs |
 
 ---
@@ -413,72 +381,72 @@ npm run dev
 
 ## 🛠️ 技术栈
 
-| 层级 | 技术 | 用途 |
-|------|------|------|
-| 前端渲染 | Fabric.js 5.3 | 画布操作、对象管理、图层排序、编组 |
-| 前端语音 | Web Speech API | 麦克风模式语音识别 |
-| 前端 VAD | AudioWorklet | 语音活动检测（能量阈值 0.02 + hangover 1.5s） |
-| 后端框架 | FastAPI | REST + WebSocket API |
-| ASR | DashScope WebSocket | 流式语音识别（实时 partial/final） |
-| LLM | DeepSeek API | ReAct 循环中的意图理解 + 工具选择 |
-| TTS | DashScope TTS | 语音合成反馈（cosyvoice-v2） |
-| 矢量化 | OpenCV / Pillow | 位图转 SVG 轮廓提取 |
-| 图标库 | Iconify API | 200,000+ 图标搜索 |
+| 层级     | 技术                | 用途                                          |
+| -------- | ------------------- | --------------------------------------------- |
+| 前端渲染 | Fabric.js 5.3       | 画布操作、对象管理、图层排序、编组            |
+| 前端语音 | Web Speech API      | 麦克风模式语音识别                            |
+| 前端 VAD | AudioWorklet        | 语音活动检测（能量阈值 0.02 + hangover 1.5s） |
+| 后端框架 | FastAPI             | REST + WebSocket API                          |
+| ASR      | DashScope WebSocket | 流式语音识别（实时 partial/final）            |
+| LLM      | DeepSeek API        | ReAct 循环中的意图理解 + 工具选择             |
+| TTS      | DashScope TTS       | 语音合成反馈（cosyvoice-v2）                  |
+| 矢量化   | OpenCV / Pillow     | 位图转 SVG 轮廓提取                           |
+| 图标库   | Iconify API         | 200,000+ 图标搜索                             |
 
 ---
 
 ## 📊 工具清单（30+）
 
 ### 绘制工具
-| 工具 | 说明 |
-|------|------|
-| `draw_shape` | 绘制基础形状（圆/矩形/三角/星形/菱形/箭头/六边形/直线） |
-| `inject_fabric_json` | 注入 Fabric.js JSON（精确控制每个属性，支持复杂组合图形） |
-| `add_vector_shape` | 矢量形状（爱心/螺旋/波浪/齿轮/树/云/闪电/花朵/箭头曲线） |
-| `draw_svg_path` | 绘制自定义 SVG 路径 |
-| `search_icon_svg` | 搜索图标（Iconify API，200,000+ 图标） |
-| `ai_generate_image` | AI 生成图片（DashScope 图片生成） |
-| `generate_vector_art` | AI 生成矢量图（图片→SVG 转换） |
+| 工具                  | 说明                                                      |
+| --------------------- | --------------------------------------------------------- |
+| `draw_shape`          | 绘制基础形状（圆/矩形/三角/星形/菱形/箭头/六边形/直线）   |
+| `inject_fabric_json`  | 注入 Fabric.js JSON（精确控制每个属性，支持复杂组合图形） |
+| `add_vector_shape`    | 矢量形状（爱心/螺旋/波浪/齿轮/树/云/闪电/花朵/箭头曲线）  |
+| `draw_svg_path`       | 绘制自定义 SVG 路径                                       |
+| `search_icon_svg`     | 搜索图标（Iconify API，200,000+ 图标）                    |
+| `ai_generate_image`   | AI 生成图片（DashScope 图片生成）                         |
+| `generate_vector_art` | AI 生成矢量图（图片→SVG 转换）                            |
 
 ### 编辑工具（全部支持按 tag 批量操作）
-| 工具 | 说明 |
-|------|------|
-| `edit_shape` | 修改属性（颜色/大小/透明度/描边/标签） |
-| `move_shape` | 移动位置（绝对坐标或九宫格位置） |
-| `resize_shape` | 调整大小 |
-| `set_opacity` | 设置透明度 (0-1) |
-| `set_stroke` | 设置描边（颜色 + 粗细） |
-| `rotate_shape` | 旋转（角度，正数顺时针） |
+| 工具            | 说明                                    |
+| --------------- | --------------------------------------- |
+| `edit_shape`    | 修改属性（颜色/大小/透明度/描边/标签）  |
+| `move_shape`    | 移动位置（绝对坐标或九宫格位置）        |
+| `resize_shape`  | 调整大小                                |
+| `set_opacity`   | 设置透明度 (0-1)                        |
+| `set_stroke`    | 设置描边（颜色 + 粗细）                 |
+| `rotate_shape`  | 旋转（角度，正数顺时针）                |
 | `reorder_layer` | 图层排序（置顶/置底/上移一层/下移一层） |
-| `fill_area` | 填充颜色 |
+| `fill_area`     | 填充颜色                                |
 
 ### 删除工具
-| 工具 | 说明 |
-|------|------|
+| 工具            | 说明                              |
+| --------------- | --------------------------------- |
 | `delete_by_tag` | 按标签批量删除（空 tag 安全过滤） |
-| `delete_shape` | 删除指定图形 |
-| `delete_all` | 清空画布 |
+| `delete_shape`  | 删除指定图形                      |
+| `delete_all`    | 清空画布                          |
 
 ### 查询工具
-| 工具 | 说明 |
-|------|------|
-| `list_shapes` | 列出所有图形（tag/类型/位置/颜色） |
-| `describe_canvas` | 描述画布状态（供 LLM 理解上下文） |
-| `get_shape_info` | 获取单个图形详情 |
+| 工具              | 说明                               |
+| ----------------- | ---------------------------------- |
+| `list_shapes`     | 列出所有图形（tag/类型/位置/颜色） |
+| `describe_canvas` | 描述画布状态（供 LLM 理解上下文）  |
+| `get_shape_info`  | 获取单个图形详情                   |
 
 ### 其他工具
-| 工具 | 说明 |
-|------|------|
-| `undo` / `redo` | 撤销 / 重做 |
-| `save_as_png` / `save_as_svg` | 保存导出 |
-| `group_objects` / `group_by_tag` | 编组（选中对象 / 按标签） |
-| `ungroup_objects` | 解散编组 |
-| `select_shape` | 选中图形 |
-| `duplicate_shape` | 复制图形 |
-| `set_active_tool` | 切换工具（select/rect/circle/...） |
-| `set_brush_params` | 设置画笔参数 |
-| `draw_freehand_path` | 自由绘制路径 |
-| `pen_draw` | 钢笔绘制 |
+| 工具                             | 说明                               |
+| -------------------------------- | ---------------------------------- |
+| `undo` / `redo`                  | 撤销 / 重做                        |
+| `save_as_png` / `save_as_svg`    | 保存导出                           |
+| `group_objects` / `group_by_tag` | 编组（选中对象 / 按标签）          |
+| `ungroup_objects`                | 解散编组                           |
+| `select_shape`                   | 选中图形                           |
+| `duplicate_shape`                | 复制图形                           |
+| `set_active_tool`                | 切换工具（select/rect/circle/...） |
+| `set_brush_params`               | 设置画笔参数                       |
+| `draw_freehand_path`             | 自由绘制路径                       |
+| `pen_draw`                       | 钢笔绘制                           |
 
 ---
 
